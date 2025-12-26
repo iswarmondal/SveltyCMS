@@ -18,6 +18,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import * as ts from 'typescript';
 import { v4 as uuidv4 } from 'uuid';
+import { createHash } from 'crypto';
 
 // Note: Cannot import logger.server here as this file is imported by vite.config.ts
 // which runs before SvelteKit is initialized. Use console for build-time logging.
@@ -521,21 +522,15 @@ async function writeCompiledFile(filePath: string, code: string): Promise<void> 
 	await fs.writeFile(filePath, code);
 }
 
+/** Generate SHA-256 hash of content (first 16 chars for brevity) */
 function getContentHash(content: string): string {
-	let hash = 0;
-	for (let i = 0; i < content.length; i++) {
-		const char = content.charCodeAt(i);
-		hash = (hash << 5) - hash + char;
-		hash &= hash;
-	}
-	// Convert to hex and ensure it's always positive
-	return Math.abs(hash).toString(16);
+	return createHash('sha256').update(content, 'utf8').digest('hex').slice(0, 16);
 }
 
-// Helper function to extract Hash from JS file content
+/** Extract hash from compiled JS file */
 function extractHashFromJs(content: string): string | null {
-	//regex to handle potential whitespace variations and hex format
-	const match = content.match(/^\/\/\s*HASH:\s*([a-f0-9]+)\s*$/m);
+	// Match 16-char hex hash from SHA-256
+	const match = content.match(/^\/\/\s*HASH:\s*([a-f0-9]{16})\s*$/m);
 	return match ? match[1] : null;
 }
 

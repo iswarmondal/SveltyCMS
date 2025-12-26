@@ -412,10 +412,10 @@ export class Auth {
 				return null;
 			}
 
-			const expiresAt = dateToISODateString(new Date(Date.now() + 24 * 60 * 60 * 1000)); // 24 hours
+			const expiresAt = dateToISODateString(new Date(Date.now() + 24 * 60 * 60 * 1000)) as ISODateString; // 24 hours
 			const session = await this.createSession({ user_id: user._id, expires: expiresAt, tenantId });
 
-			await this.sessionStore.set(session._id, user, expiresAt);
+			await this.sessionStore.set(session._id, user, expiresAt as ISODateString);
 
 			return { user, sessionId: session._id };
 		} catch (err) {

@@ -19,7 +19,7 @@
 import type { Theme } from '@src/databases/dbInterface';
 import type { Model } from 'mongoose';
 import mongoose, { Schema } from 'mongoose';
-import { nowISODateString, toISOString } from '@utils/dateUtils';
+import { nowISODateString, toISO as toISOString } from '@utils/dateUtils';
 
 // System Logger
 import { logger } from '@utils/logger';

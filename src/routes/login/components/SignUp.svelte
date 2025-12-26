@@ -35,7 +35,7 @@ Features:
 	import * as m from '@src/paraglide/messages';
 
 	// Screen size store
-	import { isDesktop } from '@stores/screenSizeStore.svelte';
+	import { screenSizeStore } from '@stores/screenSizeStore.svelte';
 	import type { Component } from 'svelte';
 
 	// Props
@@ -195,7 +195,7 @@ Features:
 
 	// Lazy-load FloatingPaths only on desktop when SignUp is active
 	$effect(() => {
-		const desktop = isDesktop.value;
+		const desktop = screenSizeStore.isDesktop;
 		const isActiveSignUp = active === 1;
 		if (browser && desktop && isActiveSignUp) {
 			import('@root/src/components/system/FloatingPaths.svelte').then((m) => {
@@ -227,7 +227,7 @@ Features:
 >
 	{#if active === 1}
 		<div class="relative flex min-h-screen w-full items-center justify-center overflow-hidden">
-			{#if isDesktop.value && FloatingPathsComponent}
+			{#if screenSizeStore.isDesktop && FloatingPathsComponent}
 				<div class="absolute inset-0">
 					<FloatingPathsComponent position={1} background="dark" mirrorAnimation />
 					<FloatingPathsComponent position={-1} background="dark" mirrorAnimation />

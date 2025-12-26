@@ -101,8 +101,22 @@ export interface ContentNode {
 	createdAt: ISODateString;
 	updatedAt: ISODateString;
 	tenantId?: string; // For multi-tenant support
-	deletedAt?: ISODateString; // Timestamp of deletion
 	deletedBy?: string; // User who performed deletion
+}
+
+export interface NavigationNode {
+	_id: string;
+	name: string;
+	path?: string;
+	icon?: string;
+	nodeType: 'category' | 'collection';
+	order?: number;
+	status?: string;
+	lastModified?: Date;
+	parentId?: string;
+	translations?: { languageTag: string; translationName: string }[];
+	children?: NavigationNode[];
+	hasChildren?: boolean;
 }
 
 // Widget field type definition

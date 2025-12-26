@@ -14,21 +14,31 @@
 	import 'iconify-icon';
 
 	import { page } from '$app/state';
-	import { onMount, untrack } from 'svelte';
+	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
 
 	// Skeleton UI
-	import { initializeStores, storePopup } from '@skeletonlabs/skeleton';
+	import { initializeStores, storePopup, getModalStore, Modal } from '@skeletonlabs/skeleton';
 	import { arrow, autoUpdate, computePosition, flip, offset, shift } from '@floating-ui/dom';
-	import { setGlobalToastStore } from '@utils/toast';
-	import { getToastStore, Toast } from '@skeletonlabs/skeleton';
+	// import { setGlobalToastStore } from '@utils/toast'; // Deprecated
+	import { setGlobalModalStore } from '@utils/modalUtils'; // Add import for modal utils
+
+	// Custom Toast
+	import MyToast from '@components/system/MyToast.svelte';
+
+	// Modal Components Registry
+	import ScheduleModal from '@components/collectionDisplay/ScheduleModal.svelte';
+	import MediaLibraryModal from '@components/MediaLibraryModal.svelte';
 
 	// Paraglide locale bridge
-	import { locales as availableLocales, getLocale, setLocale } from '@src/paraglide/runtime';
+	import { locales as availableLocales, getLocale } from '@src/paraglide/runtime';
 	import { systemLanguage } from '@stores/store.svelte';
 
 	// Theme management
 	import { themeStore, initializeThemeStore, initializeDarkMode } from '@stores/themeStore.svelte';
+
+	// UI effects (must be called in component context)
+	// import { initUIEffects } from '@stores/UIStore.svelte';
 
 	// Components
 	import TokenPicker from '@components/TokenPicker.svelte';
@@ -43,37 +53,40 @@
 	// State Management
 	// ============================================================================
 
-	let currentLocale = $state(getLocale());
-	let isMounted = $state(false);
-	let isHydrated = $state(false);
+	let currentLocale = $state(getLocale() || 'en'); // Fallback to 'en' if Paraglide not yet initialized
 
 	// ============================================================================
-	// Initialization
+	// Initialization - deferred to onMount for proper SSR/client separation
 	// ============================================================================
 
-	// Initialize Skeleton stores (safe to call multiple times)
+	// Initialize Skeleton stores (must be in component context during init)
+	// Initialize Skeleton stores (must be in component context during init)
 	initializeStores();
+	// const _toastStore = getToastStore();
 	storePopup.set({ computePosition, autoUpdate, offset, shift, flip, arrow });
-	setGlobalToastStore(getToastStore());
+	storePopup.set({ computePosition, autoUpdate, offset, shift, flip, arrow });
+	// setGlobalToastStore(getToastStore()); // Replaced by custom MyToast
+	setGlobalModalStore(getModalStore()); // Initialize modal store
+	setGlobalModalStore(getModalStore()); // Initialize modal store
+
+	// Modal component registry for Skeleton UI
+	const modalComponentRegistry: Record<string, any> = {
+		scheduleModal: ScheduleModal,
+		mediaLibraryModal: MediaLibraryModal
+	};
 
 	// ============================================================================
 	// Mount Lifecycle
 	// ============================================================================
 
-	onMount(() => {
-		console.log('[RootLayout] Mounting in', browser ? 'browser' : 'server');
-
-		// Wait for hydration to complete before syncing
-		requestAnimationFrame(() => {
-			isHydrated = true;
-			console.log('[RootLayout] Hydration complete');
-		});
+	onMount(async () => {
+		// Initialize UI effects
+		// initUIEffects();
 
 		// URL is the source of truth on initial load
 		const urlLocale = getLocale();
 		if (urlLocale && availableLocales.includes(urlLocale as any)) {
 			if (systemLanguage.value !== urlLocale) {
-				console.log(`[RootLayout] Aligning store (${systemLanguage.value}) to URL (${urlLocale})`);
 				systemLanguage.value = urlLocale;
 				currentLocale = urlLocale;
 			}
@@ -81,30 +94,6 @@
 
 		// Initialize dark mode
 		initializeDarkMode();
-
-		isMounted = true;
-		console.log('[RootLayout] Mount complete');
-	});
-
-	// ============================================================================
-	// Reactive Locale Syncing
-	// ============================================================================
-
-	$effect(() => {
-		// Guard: Only sync after hydration is complete
-		if (!isMounted || !isHydrated) return;
-
-		const desired = systemLanguage.value;
-		const current = untrack(() => currentLocale);
-
-		// Only update if there's an actual change
-		if (desired && availableLocales.includes(desired as any) && current !== desired) {
-			console.log('[RootLayout] Store changed, updating locale:', desired);
-
-			// Update Paraglide locale (handles routing internally)
-			setLocale(desired as any, { reload: false });
-			currentLocale = desired;
-		}
 	});
 
 	// ============================================================================
@@ -138,6 +127,11 @@
 	{#key currentLocale}
 		{@render children?.()}
 	{/key}
-	<TokenPicker />
-	<Toast />
+	{#if browser}
+		<TokenPicker />
+		<!-- Global UI Components -->
+		<Modal components={modalComponentRegistry} />
+		<MyToast />
+		<!-- <TokenPicker /> -->
+	{/if}
 </div>

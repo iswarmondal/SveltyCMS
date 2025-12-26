@@ -27,7 +27,7 @@ import type { Session, User } from '@src/databases/auth/types';
 
 // Utilities
 import { generateId } from '@src/databases/mongodb/methods/mongoDBUtils';
-import { toISOString } from '@utils/dateUtils';
+import { toISO as toISOString } from '@utils/dateUtils';
 
 // System Logging
 import { logger } from '@utils/logger';

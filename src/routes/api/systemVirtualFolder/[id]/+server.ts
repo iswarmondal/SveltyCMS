@@ -9,7 +9,7 @@ import { getPrivateSettingSync } from '@src/services/settingsService';
 import { dbAdapter } from '@src/databases/db';
 import { logger } from '@utils/logger.server';
 import type { SystemVirtualFolder } from '@src/databases/dbInterface';
-import { constructMediaUrl } from '@utils/media/mediaUtils';
+import { mediaUrl as constructMediaUrl } from '@utils/media/mediaUtils';
 import type { ISODateString } from '@src/content/types';
 
 type MediaDoc = {

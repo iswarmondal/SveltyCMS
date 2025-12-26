@@ -1,10 +1,17 @@
 /**
  * @file src/routes/api/widgets/installed/+server.ts
- * @description API endpoint for managing installed widgets per tenant with 3-pillar architecture support
+ * @description API endpoint for listing installed (custom) widgets per tenant
+ *
+ * Features:
+ * - Tenant-aware widget initialization
+ * - Permission check (api:widgets)
+ * - Returns enriched metadata including 3-pillar paths
+ * - Core vs custom distinction
  */
 
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+
 import { logger } from '@utils/logger.server';
 import { hasPermissionWithRoles } from '@src/databases/auth/permissions';
 
@@ -12,50 +19,44 @@ import { widgetStoreActions, customWidgets, getWidgetFunction } from '@stores/wi
 
 export const GET: RequestHandler = async ({ url, locals }) => {
 	try {
-		const { user } = locals;
+		const { user, roles = [], tenantId: contextTenantId } = locals;
 
-		if (!user) {
-			throw error(401, 'Unauthorized');
+		if (!user) throw error(401, 'Unauthorized');
+
+		// Permission check
+		if (!hasPermissionWithRoles(user, 'api:widgets', roles)) {
+			logger.warn(`User ${user._id} denied widget API access`);
+			throw error(403, 'Forbidden');
 		}
 
-		// Check permission
-		const hasWidgetPermission = hasPermissionWithRoles(user, 'api:widgets', locals.roles);
-		if (!hasWidgetPermission) {
-			logger.warn(`User ${user._id} denied access to widget API due to insufficient permissions`);
-			throw error(403, 'Insufficient permissions');
-		}
-		const tenantId = url.searchParams.get('tenantId') || locals.tenantId || 'default-tenant';
+		// Tenant resolution
+		const tenantId = url.searchParams.get('tenantId') ?? contextTenantId ?? 'default';
 
-		// Initialize widgets to get custom widgets list
+		// Ensure widgets loaded for this tenant
 		await widgetStoreActions.initializeWidgets(tenantId);
 
-		// Get all custom widgets from the file system (these are "installed" in the codebase)
-		let installedWidgetNames: string[] = [];
-		customWidgets.subscribe(($customWidgets) => {
-			installedWidgetNames = $customWidgets;
-		})();
+		// Installed = custom widgets from filesystem
+		const installedNames = customWidgets ?? [];
 
-		// Enrich with metadata from widget functions
-		const installedWidgets = installedWidgetNames.map((name) => {
-			const widgetFn = getWidgetFunction(name);
+		const installedWidgets = installedNames.map((name: string) => {
+			const fn = getWidgetFunction(name) as any;
 			return {
 				name,
-				icon: widgetFn?.Icon || 'mdi:puzzle-plus',
-				description: widgetFn?.Description || '',
-				// 3-Pillar Architecture metadata
-				inputComponentPath: widgetFn?.__inputComponentPath || '',
-				displayComponentPath: widgetFn?.__displayComponentPath || '',
-				dependencies: widgetFn?.__dependencies || [],
-				isCore: false // Custom widgets are never core
+				icon: fn?.Icon ?? 'mdi:puzzle-plus',
+				description: fn?.Description ?? '',
+				inputComponentPath: fn?.__inputComponentPath ?? '',
+				displayComponentPath: fn?.__displayComponentPath ?? '',
+				dependencies: fn?.__dependencies ?? [],
+				isCore: false
 			};
 		});
 
-		logger.trace(`Retrieved ${installedWidgets.length} installed widgets for tenant: ${tenantId}`);
+		logger.debug(`Returned ${installedWidgets.length} installed widgets for tenant ${tenantId}`);
 
 		return json(installedWidgets);
 	} catch (err) {
-		const message = `Failed to get installed widgets: ${err instanceof Error ? err.message : String(err)}`;
-		logger.error(message);
-		throw error(500, message);
+		const msg = err instanceof Error ? err.message : String(err);
+		logger.error('Failed to fetch installed widgets:', msg);
+		throw error(500, 'Internal server error');
 	}
 };

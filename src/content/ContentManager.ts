@@ -15,7 +15,7 @@
 
  */
 
-import type { ContentNode, Schema, ContentNodeOperation, DatabaseId } from '@src/content/types';
+import type { ContentNode, ContentNodeOperation, DatabaseId, ISODateString, NavigationNode, Schema } from '@src/content/types';
 import { logger } from '@src/utils/logger.server'; // Server-only file
 import { dateToISODateString } from '@utils/dateUtils';
 import { v4 as uuidv4 } from 'uuid';
@@ -35,20 +35,7 @@ const normalizeId = (id: string) => id.replace(/-/g, ''); // Inline function to 
 const getFs = async () => (await import('node:fs/promises')).default;
 const getDbAdapter = async () => (await import('@src/databases/db')).dbAdapter;
 
-export interface NavigationNode {
-	_id: string;
-	name: string;
-	path?: string;
-	icon?: string;
-	nodeType: 'category' | 'collection';
-	order?: number;
-	status?: string;
-	lastModified?: Date;
-	parentId?: string;
-	translations?: { languageTag: string; translationName: string }[];
-	children?: NavigationNode[];
-	hasChildren?: boolean;
-}
+export type { NavigationNode };
 
 /**
  * Singleton class that manages the entire content lifecycle.
@@ -1250,7 +1237,7 @@ class ContentManager {
 
 		// Update the node
 		node.parentId = newParentId as DatabaseId | undefined;
-		node.updatedAt = dateToISODateString(new Date());
+		node.updatedAt = dateToISODateString(new Date()) as ISODateString;
 
 		// Update in database
 		const dbAdapter = await getDbAdapter();
@@ -1354,7 +1341,7 @@ class ContentManager {
 
 					bulkUpdates.push({
 						path: node.path,
-						changes: { ...changeableFields, updatedAt: dateToISODateString(new Date()) }
+						changes: { ...changeableFields, updatedAt: dateToISODateString(new Date()) as ISODateString }
 					});
 
 					this.contentNodeMap.set(node._id, node);
@@ -1499,7 +1486,7 @@ class ContentManager {
 		dbNodeMap: Map<string, ContentNode>
 	): ContentNode[] {
 		const operations: ContentNode[] = [];
-		const now = dateToISODateString(new Date());
+		const now = dateToISODateString(new Date()) as ISODateString;
 		const pathToIdMap = new Map<string, DatabaseId>();
 
 		// Helper to cast string to DatabaseId
@@ -1519,7 +1506,7 @@ class ContentManager {
 				order: dbNode?.order ?? 999,
 				nodeType: 'category',
 				translations: dbNode?.translations ?? [],
-				createdAt: dbNode?.createdAt ? dateToISODateString(new Date(dbNode.createdAt)) : now,
+				createdAt: dbNode?.createdAt ? (dateToISODateString(new Date(dbNode.createdAt)) as ISODateString) : now,
 				updatedAt: now
 			});
 
@@ -1543,7 +1530,7 @@ class ContentManager {
 				translations: schema.translations ?? dbNode?.translations ?? [],
 				collectionDef: schema,
 				tenantId: schema.tenantId,
-				createdAt: dbNode?.createdAt ? dateToISODateString(new Date(dbNode.createdAt)) : now,
+				createdAt: dbNode?.createdAt ? (dateToISODateString(new Date(dbNode.createdAt)) as ISODateString) : now,
 				updatedAt: now
 			});
 
@@ -1669,7 +1656,7 @@ class ContentManager {
 
 	// Build in-memory structure from schemas only (used in setup mode when no database is available)
 	private async _buildInMemoryStructureFromSchemas(schemas: Schema[]): Promise<void> {
-		const now = dateToISODateString(new Date());
+		const now = dateToISODateString(new Date()) as ISODateString;
 		const { generateCategoryNodesFromPaths } = await import('./utils');
 		const fileCategoryNodes = generateCategoryNodesFromPaths(schemas);
 		const pathToIdMap = new Map<string, DatabaseId>();

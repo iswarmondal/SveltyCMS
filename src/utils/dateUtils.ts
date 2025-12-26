@@ -1,162 +1,83 @@
 /**
  * @file src/utils/dateUtils.ts
- * @description Date utility functions for SveltyCMS
+ * @description Date utilities for consistent ISO handling & formatting
  *
- * Provides:
- * - Type-safe conversion between Date objects and ISODateString
- * - Date validation utilities
- * - Consistent date handling across the application
- * - Database-agnostic date conversion helpers
+ * Features:
+ * - Type-safe ISODateString conversion
+ * - Safe unknown → Date parsing
+ * - Locale-aware display & relative formatting
+ * - ISO duration parsing
  */
 
+import type { ISODateString } from '@src/content/types';
 import { logger } from '@utils/logger';
-import type { ISODateString } from '../content/types';
 
-// Type guard for ISODateString
-export function isISODateString(value: unknown): value is ISODateString {
-	if (typeof value !== 'string') return false;
-	const date = new Date(value);
-	return !isNaN(date.getTime()) && date.toISOString() === value;
+/** Type guard for ISODateString */
+export function isISODateString(v: unknown): v is ISODateString {
+	return typeof v === 'string' && !isNaN(new Date(v).getTime()) && new Date(v).toISOString() === v;
 }
 
-// Convert Date to ISODateString with validation
-export function dateToISODateString(date: Date): ISODateString {
-	const isoString = date.toISOString();
-	if (!isISODateString(isoString)) {
-		throw new Error('Invalid date conversion');
-	}
-	return isoString;
+/** Date → ISODateString */
+export function dateToISO(date: Date): ISODateString {
+	const iso = date.toISOString();
+	if (!isISODateString(iso)) throw new Error('Invalid date');
+	return iso;
 }
 
-// Convert string to ISODateString with validation
-export function stringToISODateString(dateString: string): ISODateString {
-	const date = new Date(dateString);
-	if (isNaN(date.getTime())) {
-		throw new Error('Invalid date string');
-	}
-	return dateToISODateString(date);
-}
-
-/**
- * Safe conversion of unknown value to ISODateString
- * Database-agnostic utility that handles various date representations from any database adapter
- * (Mongoose Date objects, PostgreSQL timestamps, SQLite strings, etc.)
- *
- * @param value - Unknown value from database query (Date object, ISO string, timestamp, etc.)
- * @returns ISODateString representation
- *
- * @example
- * const doc = await db.collection.findById(id);
- * const entity = {
- *   createdAt: toISOString(doc.createdAt),
- *   updatedAt: toISOString(doc.updatedAt)
- * };
- */
-export function toISOString(value: unknown): ISODateString {
-	// Handle Date objects (common from ORMs and document databases)
-	if (value && typeof value === 'object' && 'toISOString' in value) {
-		return (value as Date).toISOString() as ISODateString;
-	}
-	// Handle already converted ISO strings (idempotent operation)
-	if (typeof value === 'string' && isISODateString(value)) {
-		return value;
-	}
-	// Handle timestamps or date strings
-	if (value) {
-		try {
-			return new Date(value as string | number).toISOString() as ISODateString;
-		} catch {
-			logger.warn('Failed to convert value to ISODateString, using current date', { value });
-		}
-	}
-	// Ultimate fallback: current date
-	return new Date().toISOString() as ISODateString;
-}
-
-/**
- * Validate and normalize date input
- * Accepts Date, ISODateString, number (timestamp in seconds or ms), or string
- */
-export function normalizeDateInput(dateInput: Date | ISODateString | number | string): ISODateString {
-	if (!dateInput) return dateToISODateString(new Date());
-	if (dateInput instanceof Date) {
-		return dateToISODateString(dateInput);
-	}
-	if (typeof dateInput === 'number') {
-		// If it's a 10-digit number, treat as seconds, else milliseconds
-		return dateToISODateString(new Date(dateInput < 1e12 ? dateInput * 1000 : dateInput));
-	}
-	if (typeof dateInput === 'string') {
-		// Try to parse as ISO string or number
-		const num = Number(dateInput);
-		if (!isNaN(num)) {
-			return dateToISODateString(new Date(num < 1e12 ? num * 1000 : num));
-		}
-		return dateToISODateString(new Date(dateInput));
-	}
-	return dateToISODateString(new Date());
-}
-
-// Current date as ISODateString
-export function nowISODateString(): ISODateString {
-	return dateToISODateString(new Date());
-}
-
-/**
- * Convert ISODateString back to Date object
- * @param isoDate The ISODateString to convert
- * @returns A Date object
- */
-export function isoDateStringToDate(isoDate: ISODateString): Date {
-	return new Date(isoDate);
-}
-
-/**
- * Format a date using a pattern string (e.g. "yyyy-MM-dd")
- * @param dateInput - Date, timestamp or ISO string
- * @param pattern - Format pattern
- * @param fallback - Fallback string if date is invalid
- */
-export function formatDateString(dateInput: Date | number | string, pattern: string = 'yyyy-MM-dd', fallback: string = ''): string {
+/** Safe unknown → ISODateString (fallback to now) */
+export function toISO(v: unknown): ISODateString {
 	try {
-		let date: Date;
+		if (v instanceof Date) return dateToISO(v);
+		if (typeof v === 'string' && isISODateString(v)) return v;
+		if (typeof v === 'number') return dateToISO(new Date(v > 1e12 ? v : v * 1000));
+		return dateToISO(new Date(v as any));
+	} catch (e) {
+		logger.warn('Date conversion failed, using now', { input: v });
+		return dateToISO(new Date());
+	}
+}
 
-		if (typeof dateInput === 'number') {
-			date = new Date(dateInput > 1e12 ? dateInput : dateInput * 1000);
-		} else if (typeof dateInput === 'string') {
-			date = new Date(dateInput);
-		} else {
-			date = dateInput;
-		}
+/** Normalize various inputs to ISODateString */
+export function normalizeISO(input: Date | string | number | null | undefined): ISODateString {
+	if (!input) return dateToISO(new Date());
+	if (input instanceof Date) return dateToISO(input);
+	if (typeof input === 'number') return dateToISO(new Date(input > 1e12 ? input : input * 1000));
+	return toISO(input);
+}
 
-		if (isNaN(date.getTime())) {
-			return fallback;
-		}
+/** Current time as ISODateString */
+export const nowISO = () => dateToISO(new Date());
 
-		const yyyy = date.getFullYear().toString();
-		const MM = (date.getMonth() + 1).toString().padStart(2, '0');
-		const dd = date.getDate().toString().padStart(2, '0');
-		const HH = date.getHours().toString().padStart(2, '0');
-		const mm = date.getMinutes().toString().padStart(2, '0');
-		const ss = date.getSeconds().toString().padStart(2, '0');
+/** ISODateString → Date */
+export function fromISO(iso: ISODateString): Date {
+	return new Date(iso);
+}
 
-		return pattern.replace('yyyy', yyyy).replace('MM', MM).replace('dd', dd).replace('HH', HH).replace('mm', mm).replace('ss', ss);
-	} catch (error) {
-		logger.error('Error formatting date string:', error);
+/** Simple pattern formatting (yyyy-MM-dd HH:mm:ss) */
+export function formatDate(input: Date | string | number, pattern = 'yyyy-MM-dd HH:mm:ss', fallback = 'Invalid Date'): string {
+	try {
+		const d = input instanceof Date ? input : new Date(typeof input === 'number' ? input * (input > 1e12 ? 1 : 1000) : input);
+		if (isNaN(d.getTime())) return fallback;
+
+		const pad = (n: number) => n.toString().padStart(2, '0');
+		return pattern
+			.replace('yyyy', d.getFullYear().toString())
+			.replace('MM', pad(d.getMonth() + 1))
+			.replace('dd', pad(d.getDate()))
+			.replace('HH', pad(d.getHours()))
+			.replace('mm', pad(d.getMinutes()))
+			.replace('ss', pad(d.getSeconds()));
+	} catch (e) {
+		logger.warn('Date formatting failed', e);
 		return fallback;
 	}
 }
 
-/**
- * Format date for display with proper locale and timezone handling
- * @param dateInput - Date, timestamp or ISO string
- * @param locale - Locale to format for (default: system language)
- * @param options - Intl.DateTimeFormat options
- */
-export function formatDisplayDate(
-	dateInput: Date | number | string,
-	locale: string = 'en',
-	options: Intl.DateTimeFormatOptions = {
+/** Locale-aware display */
+export function formatDisplay(
+	input: Date | string | number,
+	locale = 'en',
+	opts: Intl.DateTimeFormatOptions = {
 		year: 'numeric',
 		month: 'short',
 		day: 'numeric',
@@ -165,86 +86,62 @@ export function formatDisplayDate(
 	}
 ): string {
 	try {
-		let date: Date;
-
-		if (typeof dateInput === 'number') {
-			// Handle MongoDB timestamp (seconds vs milliseconds)
-			date = new Date(dateInput > 1e12 ? dateInput : dateInput * 1000);
-		} else if (typeof dateInput === 'string') {
-			date = new Date(dateInput);
-		} else {
-			date = dateInput;
-		}
-
-		if (isNaN(date.getTime())) {
-			return 'Invalid Date';
-		}
-
-		return new Intl.DateTimeFormat(locale, options).format(date);
-	} catch (error) {
-		logger.error('Error formatting date:', error);
+		const d = input instanceof Date ? input : new Date(typeof input === 'number' ? input * (input > 1e12 ? 1 : 1000) : input);
+		if (isNaN(d.getTime())) return 'Invalid Date';
+		return new Intl.DateTimeFormat(locale, opts).format(d);
+	} catch (e) {
+		logger.warn('Display formatting failed', e);
 		return 'Invalid Date';
 	}
 }
 
-/**
- * Format date for display in a relative way (e.g. "2 hours ago")
- * @param dateInput - Date, timestamp or ISO string
- * @param locale - Locale to format for
- */
-export function formatRelativeDate(dateInput: Date | number | string, locale: string = 'en'): string {
+/** Relative time ("2 hours ago") */
+export function formatRelative(input: Date | string | number, locale = 'en'): string {
 	try {
-		let date: Date;
+		const d = input instanceof Date ? input : new Date(typeof input === 'number' ? input * (input > 1e12 ? 1 : 1000) : input);
+		if (isNaN(d.getTime())) return 'Invalid Date';
 
-		if (typeof dateInput === 'number') {
-			// Handle MongoDB timestamp (seconds vs milliseconds)
-			date = new Date(dateInput > 1e12 ? dateInput : dateInput * 1000);
-		} else if (typeof dateInput === 'string') {
-			date = new Date(dateInput);
-		} else {
-			date = dateInput;
-		}
+		const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
+		const sec = Math.floor((Date.now() - d.getTime()) / 1000);
 
-		if (isNaN(date.getTime())) {
-			return 'Invalid Date';
-		}
-
-		const formatter = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
-		const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
-
-		if (seconds < 60) return formatter.format(-seconds, 'second');
-		if (seconds < 3600) return formatter.format(-Math.floor(seconds / 60), 'minute');
-		if (seconds < 86400) return formatter.format(-Math.floor(seconds / 3600), 'hour');
-		if (seconds < 2592000) return formatter.format(-Math.floor(seconds / 86400), 'day');
-		if (seconds < 31536000) return formatter.format(-Math.floor(seconds / 2592000), 'month');
-
-		return formatter.format(-Math.floor(seconds / 31536000), 'year');
-	} catch (error) {
-		logger.error('Error formatting relative date:', error);
+		if (Math.abs(sec) < 60) return rtf.format(-sec, 'second');
+		if (Math.abs(sec) < 3600) return rtf.format(-Math.floor(sec / 60), 'minute');
+		if (Math.abs(sec) < 86400) return rtf.format(-Math.floor(sec / 3600), 'hour');
+		if (Math.abs(sec) < 2592000) return rtf.format(-Math.floor(sec / 86400), 'day');
+		if (Math.abs(sec) < 31536000) return rtf.format(-Math.floor(sec / 2592000), 'month');
+		return rtf.format(-Math.floor(sec / 31536000), 'year');
+	} catch (e) {
+		logger.warn('Relative formatting failed', e);
 		return 'Invalid Date';
 	}
 }
 
-/**
- * Utility to parse ISO 8601 duration (e.g., "PT3M20S") into a human-readable format (e.g., "3:20").
- * This function can be used in the Display component if the duration is stored in ISO format.
- */
-export function formatIsoDuration(isoDuration: string | undefined): string | undefined {
-	if (!isoDuration) return undefined;
+/** ISO duration → HH:MM:SS */
+export function formatDuration(iso?: string): string | undefined {
+	if (!iso) return undefined;
+	const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+	if (!m) return undefined;
 
-	const regex = /PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/;
-	const matches = isoDuration.match(regex);
-
-	if (!matches) return undefined;
-
-	const hours = parseInt(matches[1] || '0', 10);
-	const minutes = parseInt(matches[2] || '0', 10);
-	const seconds = parseInt(matches[3] || '0', 10);
+	const h = parseInt(m[1] || '0', 10);
+	const min = parseInt(m[2] || '0', 10);
+	const sec = parseInt(m[3] || '0', 10);
 
 	const parts = [];
-	if (hours > 0) parts.push(String(hours).padStart(2, '0'));
-	parts.push(String(minutes).padStart(2, '0'));
-	parts.push(String(seconds).padStart(2, '0'));
+	if (h) parts.push(String(h).padStart(2, '0'));
+	parts.push(String(min).padStart(2, '0'));
+	parts.push(String(sec).padStart(2, '0'));
 
 	return parts.join(':');
 }
+
+/** Simple date string for filenames (YYYY-MM-DD) */
+export function dateToISODateString(date: Date): string {
+	return formatDate(date, 'yyyy-MM-dd', '');
+}
+
+/** Aliases for backward compatibility */
+export const formatDisplayDate = formatDisplay;
+export const isoDateStringToDate = fromISO;
+export const formatDateString = formatDisplay;
+export const formatIsoDuration = formatDuration;
+export const nowISODateString = nowISO;

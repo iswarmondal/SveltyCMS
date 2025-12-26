@@ -10,6 +10,32 @@ import { hasPermissionWithRoles } from '@src/databases/auth/permissions';
 
 import { cacheService } from '@src/databases/CacheService';
 
+// Add GET handler for fetching active widgets
+export const GET: RequestHandler = async ({ locals }) => {
+	try {
+		const { user } = locals;
+		if (!user) {
+			throw error(401, 'Unauthorized');
+		}
+
+		if (!locals.dbAdapter?.widgets) {
+			throw error(500, 'Widget database adapter not available');
+		}
+
+		const activeRes = await locals.dbAdapter.widgets.getActiveWidgets();
+		if (!activeRes.success) {
+			throw error(500, `Failed to fetch active widgets: ${activeRes.error?.message || 'Unknown error'}`);
+		}
+
+		const activeWidgets = (activeRes.data ?? []).map((w) => w.name);
+		return json({ activeWidgets });
+	} catch (err) {
+		const message = `Failed to fetch widget status: ${err instanceof Error ? err.message : String(err)}`;
+		logger.error(message);
+		throw error(500, message);
+	}
+};
+
 export const POST: RequestHandler = async ({ locals, request }) => {
 	try {
 		const { user } = locals;

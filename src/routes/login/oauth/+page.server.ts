@@ -17,15 +17,12 @@ import { auth, dbInitPromise } from '@src/databases/db';
 import { invalidateUserCountCache } from '@src/hooks/handleAuthorization';
 
 // Utils
-import { contentManager } from '@root/src/content/ContentManager';
-import { saveAvatarImage } from '@utils/media/mediaStorage.server';
+import { saveAvatar } from '@utils/media/mediaStorage.server';
+import { contentManager } from '@src/content/ContentManager';
 
 // Stores
-import { getPrivateSettingSync } from '@src/services/settingsService';
-import { publicEnv } from '@src/stores/globalSettings.svelte';
+import { getPrivateSettingSync, loadSettingsCache } from '@src/services/settingsService';
 import type { Locale } from '@src/paraglide/runtime';
-import { systemLanguage } from '@stores/store.svelte';
-import { get } from 'svelte/store';
 
 // System Logger
 import { generateGoogleAuthUrl, getOAuthRedirectUri } from '@src/databases/auth/googleAuth';
@@ -49,9 +46,10 @@ async function sendWelcomeEmail(
 	request: Request
 ) {
 	try {
-		const userLanguage = (get(systemLanguage) as Locale) || 'en';
-		const hostProd = publicEnv.HOST_PROD;
-		const siteName = publicEnv.SITE_NAME;
+		const settingsCache = await loadSettingsCache();
+		const userLanguage = (settingsCache.public.BASE_LOCALE as Locale) || 'en';
+		const hostProd = settingsCache.public.HOST_PROD;
+		const siteName = settingsCache.public.SITE_NAME;
 		const emailProps = {
 			username,
 			email,
@@ -110,7 +108,7 @@ async function fetchAndSaveGoogleAvatar(avatarUrl: string, userEmail: string): P
 
 		logger.debug(`Created avatar file: ${fileName}, size: ${avatarFile.size} bytes, type: ${mimeType}`);
 
-		const savedUrl = await saveAvatarImage(avatarFile, userEmail);
+		const savedUrl = await saveAvatar(avatarFile, userEmail);
 
 		if (!savedUrl) {
 			throw new Error('Failed to save avatar image');
@@ -144,10 +142,13 @@ async function handleGoogleUser(
 	}
 
 	if (googleUser.locale) {
-		const supportedLocales = (publicEnv.LOCALES || [publicEnv.BASE_LOCALE || 'en']) as Locale[];
+		const settingsCache = await loadSettingsCache();
+		const configuredLocales = settingsCache.public.LOCALES || [settingsCache.public.BASE_LOCALE || 'en'];
+		const supportedLocales = configuredLocales as Locale[];
 		const locale = googleUser.locale as Locale;
 		if (supportedLocales.includes(locale)) {
-			systemLanguage.set(locale);
+			// Note: This sets server-side state, may not persist to client
+			// Consider using cookies instead for real locale persistence
 		}
 	}
 
@@ -356,7 +357,8 @@ export const load: PageServerLoad = async ({ url, cookies, fetch, request }) => 
 			logger.info('Successfully processed OAuth callback and created session');
 
 			// Redirect to the first available collection
-			const defaultLanguage = publicEnv.DEFAULT_CONTENT_LANGUAGE || 'en';
+			const settingsCache = await loadSettingsCache();
+			const defaultLanguage = settingsCache.public.DEFAULT_CONTENT_LANGUAGE || 'en';
 			const userLanguage = url.searchParams.get('lang') || defaultLanguage;
 			const redirectUrl = await contentManager.getFirstCollectionRedirectUrl(userLanguage);
 

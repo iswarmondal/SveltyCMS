@@ -1,85 +1,74 @@
 /**
  * @file src/utils/demoCleanup.ts
- * @description Utility to clean up expired demo tenants in DEMO mode.
+ * @description Periodic cleanup for expired demo tenants (DEMO mode only)
  *
- * This function identifies tenants that were created over 60 minutes ago
- * and removes all associated data from the database to reset the demo environment.
- * It is intended to be run periodically (e.g., via a cron job).
+ * Features:
+ * - Runs only when DEMO=true
+ * - Deletes tenants >60 minutes old
+ * - Removes users, sessions, settings, themes, content structure, tokens
+ * - Cleans dynamic collection data (tenant-scoped)
+ * - Safe & logged
  */
 
 import { logger } from '@utils/logger.server';
 import mongoose from 'mongoose';
+
 import { SystemSettingModel } from '@src/databases/mongodb/models/systemSetting';
 import { ThemeModel } from '@src/databases/mongodb/models/theme';
 import { ContentStructureModel } from '@src/databases/mongodb/models/contentStructure';
 import { WebsiteTokenModel } from '@src/databases/mongodb/models/websiteToken';
+
 import { getPrivateEnv } from '@src/databases/db';
 
-/**
- * Cleans up expired demo tenants.
- * Runs only if DEMO mode is enabled (via env var or private config).
- */
-export async function cleanupExpiredDemoTenants() {
+const EXPIRATION_MINUTES = 60;
+const EXPIRATION_MS = EXPIRATION_MINUTES * 60 * 1000;
+
+export async function cleanupExpiredDemoTenants(): Promise<void> {
 	const env = getPrivateEnv();
 	const isDemo = process.env.SVELTYCMS_DEMO === 'true' || env?.DEMO === true;
-
-	// Safety check: ONLY run in demo mode
 	if (!isDemo) return;
 
-	// Threshold: 60 minutes
-	const EXPIRATION_MS = 60 * 60 * 1000;
-	const cutoffDate = new Date(Date.now() - EXPIRATION_MS);
+	const cutoff = new Date(Date.now() - EXPIRATION_MS);
 
 	try {
-		// Access models that are not exported directly
-		// We assume these models are already registered by the application startup
-		const User = mongoose.models.auth_users || mongoose.model('auth_users');
-		const Session = mongoose.models.auth_sessions || mongoose.model('auth_sessions');
+		const User = mongoose.model('auth_users');
+		const Session = mongoose.model('auth_sessions');
 
-		// 1. Identify expired tenants
-		// We look for the 'admin' user created during seeding for that tenant
-		const expiredUsers = await User.find({
+		// Find expired demo admin users (indicator of tenant age)
+		const expiredAdmins = await User.find({
 			tenantId: { $exists: true, $ne: null },
-			createdAt: { $lt: cutoffDate },
-			role: 'admin'
+			role: 'admin',
+			createdAt: { $lt: cutoff }
 		}).select('tenantId');
 
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const tenantIds = [...new Set(expiredUsers.map((u: any) => u.tenantId).filter(Boolean))];
-
+		const tenantIds = [...new Set(expiredAdmins.map((u) => u.tenantId).filter(Boolean))];
 		if (tenantIds.length === 0) return;
 
-		logger.info(`🧹 [Demo Cleanup] Found ${tenantIds.length} expired tenants. Starting cleanup...`);
+		logger.info(`[Demo Cleanup] Removing ${tenantIds.length} expired tenants`);
 
 		for (const tenantId of tenantIds) {
-			if (!tenantId) continue;
-			logger.debug(`🗑️ [Demo Cleanup] Deleting tenant: ${tenantId}`);
+			logger.debug(`[Demo Cleanup] Cleaning tenant: ${tenantId}`);
 
-			// 2. Delete Dynamic Content
-			// We iterate through the ContentStructure to find collection names
+			// Dynamic collections data
 			const collections = await ContentStructureModel.find({
 				tenantId,
 				nodeType: 'collection'
 			});
 
-			for (const col of collections) {
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				const c = col as any;
-				if (c.name) {
+			await Promise.all(
+				collections.map(async (col) => {
 					try {
-						// Attempt to delete data from the dynamic collection
-						// We use the native MongoDB driver to avoid Mongoose model compilation issues
-						const collectionName = c.name; // Assuming collection name matches structure name
-						// Note: In a real multi-tenant setup, verify if collection names are prefixed or shared.
-						// Here we assume shared collections with tenantId field.
-						await mongoose.connection.db?.collection(collectionName).deleteMany({ tenantId });
-					} catch (err) {
-						// Ignore errors if collection doesn't exist
+						const collName = `collection_${(col as any)._id}`;
+						if (mongoose.connection.db) {
+							await mongoose.connection.db.collection(collName).deleteMany({ tenantId });
+						}
+					} catch (e) {
+						// Collection may not exist yet
 					}
-				}
-			}
+				})
+			);
 
-			// 3. Delete System Data
+			// System data
 			await Promise.all([
 				User.deleteMany({ tenantId }),
 				Session.deleteMany({ tenantId }),
@@ -87,13 +76,12 @@ export async function cleanupExpiredDemoTenants() {
 				ThemeModel.deleteMany({ tenantId }),
 				ContentStructureModel.deleteMany({ tenantId }),
 				WebsiteTokenModel.deleteMany({ tenantId }),
-				// Role is a dynamic model in authComposition, so we access the collection directly
-				mongoose.connection.db?.collection('auth_roles').deleteMany({ tenantId })
+				mongoose.connection.db ? mongoose.connection.db.collection('auth_roles').deleteMany({ tenantId }) : Promise.resolve()
 			]);
 		}
 
-		logger.info(`✨ [Demo Cleanup] Successfully removed ${tenantIds.length} tenants.`);
-	} catch (error) {
-		logger.error('❌ [Demo Cleanup] Failed:', error);
+		logger.info(`[Demo Cleanup] Completed – removed ${tenantIds.length} tenants`);
+	} catch (err) {
+		logger.error('[Demo Cleanup] Failed', err);
 	}
 }

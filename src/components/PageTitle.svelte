@@ -1,55 +1,29 @@
-<!-- 
-@file src/components/PageTitle.svelte 
-@component
-**Dynamic Page Title with Accessibility and CMS Features**
+<!--
+@file src/components/PageTitle.svelte
+@component PageTitle – Dynamic, accessible page header with optional icon, highlight, back button
 
-@example
-<PageTitle 
-  name="Dashboard" 
-  icon="bi:bar-chart-line" 
-  highlight="Dash" 
-  iconColor="text-primary-500" 
-  iconSize="24" 
-  showBackButton={true}  
-  backUrl="/home" 
-  onBackClick={(defaultBehavior) => {
-    // Custom navigation logic
-    defaultBehavior();
-  }}
-/>
+@props
+- name: string — Main page title (required)
+- highlight?: string — Substring to highlight in title
+- icon?: string — Iconify icon name
+- iconColor?: string — Icon color classes (default: tertiary/dark primary)
+- iconSize?: string — Icon width/height (default: 32)
+- showBackButton?: boolean — Show back navigation button
+- backUrl?: string — Optional href for back button (uses history.back if omitted)
+- truncate?: boolean — Truncate long titles (default: true)
+- onBackClick?: (defaultBehavior: () => void) => void — Custom back handler
 
-#### Props - Required 
-- `name` {string} - Page title
-- `icon` {string} - Icon name from [iconify](https://iconify.design/)
-
-#### Props - Optional 
-- `highlight` {string} - Part of `name` to highlight
-- `iconColor` {string} - Icon color (default: `text-tertiary-500 dark:text-primary-500`)
-- `iconSize` {string} - Icon size (default: `32`)
-- `showBackButton` {boolean} - Show back button (default: `false`)
-- `backUrl` {string} - Navigation URL for back button
-- `truncate` {boolean} - Enable title truncation (default: `true`)
-- `onBackClick` {function} - Custom back navigation callback
-- `color` {string} - Background/text color (default: `blue`)
-
-#### Accessibility Features:
-- ARIA live region for title changes
-- Keyboard navigation support
-- Screen reader optimization with visually hidden full title
-- Contrast validation for highlighted text
-- Responsive touch targets
-
-#### CMS Features:
-- Data attributes for CMS field mapping
-- Content editor hints
-- Fluid typography scaling
+@features
+- Fluid responsive typography
+- Highlight support
+- Full accessibility (ARIA live, SR-only fallback, keyboard nav)
+- Optional sidebar toggle when hidden
+- CMS-friendly data attributes
 -->
-<script lang="ts">
-	// Stores
-	import { toggleUIElement, uiStateManager } from '@stores/UIStore.svelte';
-	import { isDesktop } from '@stores/screenSizeStore.svelte';
 
-	type DefaultBehaviorFn = () => void;
+<script lang="ts">
+	import { toggleUIElement, uiVisibility } from '@stores/UIStore.svelte';
+	import { screenSizeStore } from '@stores/screenSizeStore.svelte';
 
 	interface Props {
 		name: string;
@@ -60,13 +34,13 @@
 		showBackButton?: boolean;
 		backUrl?: string;
 		truncate?: boolean;
-		onBackClick?: (defaultBehavior: DefaultBehaviorFn) => void;
+		onBackClick?: (defaultBehavior: () => void) => void;
 	}
 
-	const {
+	let {
 		name,
 		highlight = '',
-		icon,
+		icon = '',
 		iconColor = 'text-tertiary-500 dark:text-primary-500',
 		iconSize = '32',
 		showBackButton = false,
@@ -75,94 +49,98 @@
 		onBackClick
 	}: Props = $props();
 
-	const titleParts = $derived(() => {
-		if (highlight && name.toLowerCase().includes(highlight.toLowerCase())) {
-			const regex = new RegExp(`(${highlight})`, 'gi');
-			return name.split(regex);
+	// Derived: split title for highlighting
+	let titleParts = $derived.by(() => {
+		if (!highlight || !name.toLowerCase().includes(highlight.toLowerCase())) {
+			return [name];
 		}
-		return [name];
+		const escaped = highlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+		const regex = new RegExp(`(${escaped})`, 'gi');
+		return name.split(regex);
 	});
 
-	function handleBackClick(event: Event) {
-		const defaultBehavior: DefaultBehaviorFn = () => {
+	// Derived UI state
+	let isSidebarHidden = $derived(uiVisibility.current.leftSidebar === 'hidden');
+	let isDesktop = $derived(screenSizeStore.isDesktop);
+
+	// Back button handler
+	function handleBack(e: MouseEvent) {
+		const defaultBehavior = () => {
 			if (!backUrl) {
-				event.preventDefault();
+				e.preventDefault();
 				window.history.back();
 			}
-			// If backUrl exists, let the link handle navigation naturally
 		};
 
 		if (onBackClick) {
-			event.preventDefault();
+			e.preventDefault();
 			onBackClick(defaultBehavior);
 		} else if (!backUrl) {
-			// No backUrl provided, use browser history
-			event.preventDefault();
+			e.preventDefault();
 			window.history.back();
 		}
-		// Otherwise, let the <a> tag handle navigation with preloading
 	}
 </script>
 
 <div class="my-1 flex w-full min-w-0 items-center justify-between gap-4">
-	<div class="flex min-w-0 items-center">
-		{#if uiStateManager.uiState.value.leftSidebar === 'hidden'}
+	<div class="flex min-w-0 items-center gap-2">
+		{#if isSidebarHidden}
 			<button
 				type="button"
-				onclick={() => toggleUIElement('leftSidebar', isDesktop.value ? 'full' : 'collapsed')}
-				aria-label="Open Sidebar"
-				class="variant-ghost-surface btn-icon"
+				onclick={() => toggleUIElement('leftSidebar', isDesktop ? 'full' : 'collapsed')}
+				aria-label="Open sidebar"
+				class="btn-icon variant-ghost-surface"
 			>
 				<iconify-icon icon="mingcute:menu-fill" width="24"></iconify-icon>
 			</button>
 		{/if}
+
 		<h1
-			class="transition-max-width h1 relative ml-2 flex items-center gap-1 font-bold"
+			class="h1 relative ml-2 flex items-center gap-1 font-bold transition-all"
 			style="font-size: clamp(1.5rem, 3vw + 1rem, 2.25rem);"
 			aria-live="polite"
 			data-cms-field="pageTitle"
 			data-cms-type="text"
 		>
 			{#if icon}
-				<iconify-icon {icon} width={iconSize} class={`mr-1 shrink-0 ${iconColor} sm:mr-2`} aria-hidden="true"></iconify-icon>
+				<iconify-icon {icon} width={iconSize} class="mr-1 shrink-0 sm:mr-2 {iconColor}" aria-hidden="true"></iconify-icon>
 			{/if}
 
-			<span class:block={truncate} class:overflow-hidden={truncate} class:text-ellipsis={truncate} class:whitespace-nowrap={truncate}>
-				{#each titleParts() as part, i (i)}
+			<span class="block min-w-0" class:overflow-hidden={truncate} class:text-ellipsis={truncate} class:whitespace-nowrap={truncate}>
+				{#each titleParts as part, i (i)}
 					<span class={i % 2 === 1 ? 'font-semibold text-tertiary-500 dark:text-primary-500' : ''}>
 						{part}
 					</span>
 				{/each}
 			</span>
 
-			<span class="sr-only absolute inset-0 overflow-hidden whitespace-normal">
-				{name}
-			</span>
+			<!-- Screen-reader fallback with full non-truncated title -->
+			<span class="sr-only">{name}</span>
 		</h1>
 	</div>
+
 	{#if showBackButton}
 		{#if backUrl}
 			<a
 				href={backUrl}
+				onclick={handleBack}
 				aria-label="Go back"
-				class="variant-outline-tertiary btn-icon shrink-0 dark:variant-outline-primary"
+				class="btn-icon variant-outline-tertiary dark:variant-outline-primary shrink-0"
 				style="min-width: 48px; min-height: 48px;"
 				data-cms-action="back"
 				data-sveltekit-preload-data="hover"
-				onclick={(e) => handleBackClick(e)}
 			>
-				<iconify-icon icon="ri:arrow-left-line" width="24" aria-hidden="true"></iconify-icon>
+				<iconify-icon icon="ri:arrow-left-line" width="24"></iconify-icon>
 			</a>
 		{:else}
 			<button
-				onclick={(e) => handleBackClick(e)}
+				onclick={handleBack}
 				aria-label="Go back"
-				tabindex="0"
-				class="variant-outline-tertiary btn-icon shrink-0 dark:variant-outline-primary"
+				class="btn-icon variant-outline-tertiary dark:variant-outline-primary shrink-0"
 				style="min-width: 48px; min-height: 48px;"
 				data-cms-action="back"
 			>
-				<iconify-icon icon="ri:arrow-left-line" width="24" aria-hidden="true"></iconify-icon>
+				<iconify-icon icon="ri:arrow-left-line" width="24"></iconify-icon>
 			</button>
 		{/if}
 	{/if}

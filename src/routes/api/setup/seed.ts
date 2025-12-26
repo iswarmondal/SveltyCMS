@@ -17,6 +17,7 @@ import { publicConfigSchema } from '@src/databases/schemas';
 import type { DatabaseId } from '@src/content/types';
 import type { DatabaseAdapter, Theme } from '@src/databases/dbInterface';
 import { invalidateSettingsCache } from '@src/services/settingsService';
+import type { ISODateString } from '@src/content/types';
 import { logger } from '@utils/logger.server';
 import { dateToISODateString } from '@utils/dateUtils';
 import { safeParse } from 'valibot';
@@ -57,8 +58,8 @@ const defaultTheme: Theme = {
 		tailwindConfigPath: '',
 		assetsPath: ''
 	},
-	createdAt: dateToISODateString(new Date()),
-	updatedAt: dateToISODateString(new Date())
+	createdAt: dateToISODateString(new Date()) as ISODateString,
+	updatedAt: dateToISODateString(new Date()) as ISODateString
 };
 
 // Re-export defaultRoles from shared module for backward compatibility

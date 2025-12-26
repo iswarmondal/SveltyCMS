@@ -90,14 +90,14 @@ export async function PATCH({ params, request, locals }) {
 
 		// 2. Merge metadata
 		const newMetadata = {
-			...(existing.metadata || {}),
+			...((existing as any).metadata || {}),
 			...metadata
 		};
 
 		// 3. Update
 		await mediaService.updateMedia(id, { metadata: newMetadata });
 
-		return json({ success: true, data: { ...existing, metadata: newMetadata } });
+		return json({ success: true, data: { ...(existing as any), metadata: newMetadata } });
 	} catch (err) {
 		logger.error(`Error updating media ${id}:`, err);
 		if (err && typeof err === 'object' && 'status' in err) {

@@ -48,7 +48,7 @@ export class CacheMetrics {
 	private misses = 0;
 	private totalResponseTime = 0;
 	private requestCount = 0;
-	private lastResetTime: ISODateString = dateToISODateString(new Date());
+	private lastResetTime: ISODateString = dateToISODateString(new Date()) as ISODateString;
 
 	// Category-based metrics (query, schema, widget, theme, media, content)
 	private categoryMetrics = new Map<
@@ -90,7 +90,7 @@ export class CacheMetrics {
 		}
 
 		// Record event
-		this.addEvent({ type: 'hit', key, category, tenantId, responseTime, timestamp: dateToISODateString(new Date()) });
+		this.addEvent({ type: 'hit', key, category, tenantId, responseTime, timestamp: dateToISODateString(new Date()) as ISODateString });
 	}
 
 	// Records a cache miss
@@ -115,7 +115,7 @@ export class CacheMetrics {
 		}
 
 		// Record event
-		this.addEvent({ type: 'miss', key, category, tenantId, responseTime, timestamp: dateToISODateString(new Date()) });
+		this.addEvent({ type: 'miss', key, category, tenantId, responseTime, timestamp: dateToISODateString(new Date()) as ISODateString });
 	}
 
 	// Records a cache set operation with TTL for average tracking
@@ -125,17 +125,17 @@ export class CacheMetrics {
 		catMetrics.ttlCount++;
 		this.categoryMetrics.set(category, catMetrics);
 
-		this.addEvent({ type: 'set', key, category, tenantId, timestamp: dateToISODateString(new Date()) });
+		this.addEvent({ type: 'set', key, category, tenantId, timestamp: dateToISODateString(new Date()) as ISODateString });
 	}
 
 	// Records a cache delete operation
 	recordDelete(key: string, category: string, tenantId?: string): void {
-		this.addEvent({ type: 'delete', key, category, tenantId, timestamp: dateToISODateString(new Date()) });
+		this.addEvent({ type: 'delete', key, category, tenantId, timestamp: dateToISODateString(new Date()) as ISODateString });
 	}
 
 	// Records a cache clear operation
 	recordClear(pattern: string, category: string, tenantId?: string): void {
-		this.addEvent({ type: 'clear', key: pattern, category, tenantId, timestamp: dateToISODateString(new Date()) });
+		this.addEvent({ type: 'clear', key: pattern, category, tenantId, timestamp: dateToISODateString(new Date()) as ISODateString });
 	}
 
 	// Adds an event to the recent events queue
@@ -199,7 +199,7 @@ export class CacheMetrics {
 		this.misses = 0;
 		this.totalResponseTime = 0;
 		this.requestCount = 0;
-		this.lastResetTime = dateToISODateString(new Date());
+		this.lastResetTime = dateToISODateString(new Date()) as ISODateString;
 		this.categoryMetrics.clear();
 		this.tenantMetrics.clear();
 		this.recentEvents = [];

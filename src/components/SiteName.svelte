@@ -28,7 +28,8 @@
 
 	// Get site name dynamically from global settings store (updates live!)
 	// Fallback chain: prop → live store → page data → default
-	const siteName = $derived(propSiteName || publicEnv.SITE_NAME || page.data?.settings?.SITE_NAME || 'SveltyCMS');
+	// Note: page can be null during SSR in production builds
+	const siteName = $derived(propSiteName || publicEnv?.SITE_NAME || page?.data?.settings?.SITE_NAME || 'SveltyCMS');
 
 	// Split site name into parts if highlight is provided
 	const parts = $derived.by(() => {

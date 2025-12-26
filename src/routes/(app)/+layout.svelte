@@ -35,6 +35,7 @@
 	// SvelteKit Navigation
 	import { afterNavigate, beforeNavigate } from '$app/navigation';
 	import { page } from '$app/state';
+	import { browser } from '$app/environment';
 	import { onDestroy, onMount } from 'svelte';
 
 	// Type Imports
@@ -42,18 +43,16 @@
 	import type { ContentNode, Schema } from '../../content/types';
 
 	// Utils
-	import { isSearchVisible } from '@utils/globalSearchIndex';
+	import { isSearchVisible } from '@utils/globalSearchIndex.svelte';
 	import { getTextDirection } from '@utils/utils';
-	import { setGlobalModalStore } from '@utils/modalUtils';
-	import { setGlobalToastStore } from '@utils/toast';
 
 	// Stores
 	import { setContentStructure, setCollection } from '@stores/collectionStore.svelte';
 	import { publicEnv } from '@stores/globalSettings.svelte';
 	import { globalLoadingStore, loadingOperations } from '@stores/loadingStore.svelte';
-	import { isDesktop, screenSize } from '@stores/screenSizeStore.svelte';
+	import { screenSizeStore } from '@stores/screenSizeStore.svelte';
 	import { avatarSrc, systemLanguage } from '@stores/store.svelte';
-	import { uiStateManager } from '@stores/UIStore.svelte';
+	import { uiStore } from '@stores/UIStore.svelte';
 	import { widgetStoreActions } from '@stores/widgetStore.svelte';
 	import { initializeDarkMode } from '@stores/themeStore.svelte';
 
@@ -66,32 +65,12 @@
 	import FloatingNav from '@components/system/FloatingNav.svelte';
 
 	// Skeleton
-	import {
-		getModalStore,
-		getToastStore,
-		Modal,
-		setInitialClassState,
-		setModeCurrent,
-		setModeUserPrefers,
-		Toast,
-		storePopup
-	} from '@skeletonlabs/skeleton';
+	// import { storePopup } from '@skeletonlabs/skeleton';
+	// import { computePosition, autoUpdate, flip, shift, offset, arrow } from '@floating-ui/dom';
 
-	// Floating UI for Popups
-	import { arrow, autoUpdate, computePosition, flip, offset, shift } from '@floating-ui/dom';
-
-	// Modal Components Registry
-	import ScheduleModal from '@components/collectionDisplay/ScheduleModal.svelte';
-	import MediaLibraryModal from '@components/MediaLibraryModal.svelte';
-
-	// Configure popup positioning
-	storePopup.set({ computePosition, autoUpdate, offset, shift, flip, arrow });
-
-	// Modal component registry for Skeleton UI
-	const modalComponentRegistry: Record<string, any> = {
-		scheduleModal: ScheduleModal,
-		mediaLibraryModal: MediaLibraryModal
-	};
+	// =============================================
+	// TYPE DEFINITIONS
+	// =============================================
 
 	// =============================================
 	// TYPE DEFINITIONS
@@ -116,10 +95,6 @@
 	// =============================================
 
 	const { children, data }: Props = $props();
-
-	// Initialize global stores
-	setGlobalModalStore(getModalStore());
-	setGlobalToastStore(getToastStore());
 
 	// Component State
 	const loadError = $state<Error | null>(null);
@@ -208,7 +183,7 @@
 		// Alt+S: Toggle search
 		if (event.altKey && event.key === 's') {
 			event.preventDefault();
-			isSearchVisible.update((visible) => !visible);
+			isSearchVisible.toggle();
 		}
 	}
 
@@ -242,6 +217,9 @@
 
 		// Initialize theme from cookie/system preference
 		initializeDarkMode();
+
+		// Initialize UI effects (deferred to prevent $effect loops in production)
+		uiStore.initUIEffects();
 
 		// Set up system theme preference listener
 		mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -324,21 +302,22 @@
 	<!-- Application Container -->
 	<div class="relative h-lvh w-full">
 		<!-- Overlays: Mobile Nav, Toasts, Modals, Search -->
-		{#if screenSize.value === 'XS' || screenSize.value === 'SM'}
+		{#if screenSizeStore.screenSize === 'XS' || screenSizeStore.screenSize === 'SM'}
 			<FloatingNav />
 		{/if}
 
-		<Toast />
-		<Modal components={modalComponentRegistry} />
+		{#if browser}
+			<!-- <Toast /> -->
+		{/if}
 
-		{#if $isSearchVisible}
+		{#if isSearchVisible.value}
 			<SearchComponent />
 		{/if}
 
 		<!-- Main Layout Structure -->
 		<div class="flex h-lvh flex-col overflow-hidden">
 			<!-- Header (Optional) -->
-			{#if uiStateManager.uiState.value.header !== 'hidden'}
+			{#if uiStore.uiVisibility.header !== 'hidden'}
 				<header class="sticky top-0 z-10 bg-tertiary-500">
 					<!-- Header content goes here -->
 				</header>
@@ -347,9 +326,9 @@
 			<!-- Body: Sidebars + Main Content -->
 			<div class="flex flex-1 overflow-hidden">
 				<!-- Left Sidebar -->
-				{#if uiStateManager.uiState.value.leftSidebar !== 'hidden'}
+				{#if uiStore.uiVisibility.leftSidebar !== 'hidden'}
 					<aside
-						class="max-h-dvh {uiStateManager.uiState.value.leftSidebar === 'full'
+						class="max-h-dvh {uiStore.uiVisibility.leftSidebar === 'full'
 							? 'w-[220px]'
 							: 'w-fit'} relative border-r bg-white !px-2 text-center dark:border-surface-500 dark:bg-gradient-to-r dark:from-surface-700 dark:to-surface-900"
 						aria-label="Left sidebar navigation"
@@ -361,7 +340,7 @@
 				<!-- Main Content Area -->
 				<main class="relative z-0 flex w-full min-w-0 flex-1 flex-col">
 					<!-- Page Header -->
-					{#if uiStateManager.uiState.value.pageheader !== 'hidden'}
+					{#if uiStore.uiVisibility.pageheader !== 'hidden'}
 						<header class="sticky top-0 z-20 w-full">
 							<HeaderEdit />
 						</header>
@@ -369,7 +348,7 @@
 
 					<!-- Router Slot -->
 					<div
-						class="relative flex-1 overflow-visible {uiStateManager.uiState.value.leftSidebar === 'full' ? 'mx-2' : 'mx-1'} {isDesktop.value
+						class="relative flex-1 overflow-visible {uiStore.uiVisibility.leftSidebar === 'full' ? 'mx-2' : 'mx-1'} {screenSizeStore.isDesktop
 							? 'mb-2'
 							: 'mb-16'}"
 					>
@@ -378,7 +357,7 @@
 					</div>
 
 					<!-- Page Footer / Mobile Nav -->
-					{#if uiStateManager.uiState.value.pagefooter !== 'hidden'}
+					{#if uiStore.uiVisibility.pagefooter !== 'hidden'}
 						<footer class="mt-auto w-full bg-surface-50 bg-gradient-to-b px-1 text-center dark:from-surface-700 dark:to-surface-900">
 							<PageFooter />
 						</footer>
@@ -386,7 +365,7 @@
 				</main>
 
 				<!-- Right Sidebar -->
-				{#if uiStateManager.uiState.value.rightSidebar !== 'hidden'}
+				{#if uiStore.uiVisibility.rightSidebar !== 'hidden'}
 					<aside
 						class="max-h-dvh w-[220px] border-l bg-white bg-gradient-to-r dark:border-surface-500 dark:from-surface-700 dark:to-surface-900"
 						aria-label="Right sidebar"
@@ -397,7 +376,7 @@
 			</div>
 
 			<!-- Footer (Optional) -->
-			{#if uiStateManager.uiState.value.footer !== 'hidden'}
+			{#if uiStore.uiVisibility.footer !== 'hidden'}
 				<footer class="bg-blue-500">
 					<!-- Footer content goes here -->
 				</footer>

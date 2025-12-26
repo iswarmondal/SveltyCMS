@@ -30,7 +30,7 @@ calls store methods and wires store state to child components.
 
 	// Skeleton
 	import { getModalStore, type ModalSettings, Modal } from '@skeletonlabs/skeleton';
-	import { Toast, getToastStore } from '@skeletonlabs/skeleton';
+	import { getToastStore } from '@skeletonlabs/skeleton';
 
 	// ParaglideJS
 	import * as m from '@src/paraglide/messages';
@@ -211,7 +211,7 @@ calls store methods and wires store state to child components.
 
 <div class="bg-surface-50-900 min-h-screen w-full transition-colors">
 	<Modal components={modalComponentRegistry} />
-	<Toast />
+	<!-- <Toast /> -->
 	<div class="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
 		<!-- ✅ NEW: Component for Header -->
 		<SetupHeader

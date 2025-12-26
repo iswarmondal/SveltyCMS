@@ -63,6 +63,10 @@ export const handleTheme: Handle = async ({ event, resolve }) => {
 	// 5. Transform the HTML response to prevent flickering
 	return resolve(event, {
 		transformPageChunk: ({ html }) => {
+			// Replace custom CSS placeholder with actual theme CSS
+			// This is a CUSTOM placeholder - SvelteKit only handles built-in ones
+			html = html.replace('%sveltekit.customCss%', event.locals.customCss || '');
+
 			// This string MUST match your <html ...> tag in app.html
 			const htmlTag = '<html lang="en" dir="ltr">';
 

@@ -11,7 +11,6 @@
 	import { collectionValue, setCollectionValue, setTargetWidget } from '@src/stores/collectionStore.svelte';
 	import { tabSet } from '@stores/store.svelte';
 	import { widgetFunctions } from '@stores/widgetStore.svelte';
-	import { get } from 'svelte/store';
 	// Components
 	import VerticalList from '@components/VerticalList.svelte';
 	import ModalSelectWidget from './ModalSelectWidget.svelte';
@@ -152,7 +151,7 @@
 	// Function to save data by sending a POST request
 	async function handleCollectionSave() {
 		fields = fields.map((field) => {
-			const widgetInstance = get(widgetFunctions)[field.widget.Name];
+			const widgetInstance = widgetFunctions[field.widget.Name];
 			const guiSchema = widgetInstance?.GuiSchema;
 			if (!guiSchema) return field;
 

@@ -132,8 +132,9 @@
 		};
 	}
 
+	// Observables
 	const widgetComponentRegistry = $derived(widgetRegistry);
-	const currentPreferences = $derived($systemPreferences?.preferences || []);
+	const currentPreferences = $derived(systemPreferences.preferences || []);
 	const availableWidgets = $derived(
 		registryLoaded && currentPreferences
 			? Object.keys(widgetComponentRegistry).filter((name) => !currentPreferences.some((item) => item.component === name))

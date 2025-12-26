@@ -25,13 +25,13 @@ import type { MediaAccess } from '@root/src/utils/media/mediaModels';
 import { MediaService } from '@src/services/MediaService.server';
 import { constructUrl } from '@utils/media/mediaUtils';
 import { moveMediaToTrash } from '@utils/media/mediaStorage.server';
-import mime from 'mime-types';
 
 // Auth
 import { dbAdapter } from '@src/databases/db';
 
 // System Logger
-import { logger, type LoggableValue } from '@utils/logger.server';
+import { logger } from '@utils/logger.server';
+import type { LoggableValue } from '@utils/logger';
 
 interface StackItem {
 	parent: Record<string, unknown> | Array<unknown> | null;
@@ -201,8 +201,6 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			.map((item) => {
 				try {
 					const mediaItem = item as unknown as MediaItem;
-					const extension = mime.extension(mediaItem.mimeType) || '';
-					const filename = mediaItem.filename.replace(`.${extension}`, '');
 
 					// MEDIA_FOLDER may not be eagerly available; use a safe default
 					const mediaFolder = publicEnv.MEDIA_FOLDER || 'mediaFiles';
@@ -211,15 +209,15 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 					}
 
 					// Extract base path (e.g., 'global' from 'global/original/...')
-					const rawPath = mediaItem.path ?? 'global';
+					// const rawPath = mediaItem.path ?? 'global';
 					// Remove leading slashes and 'files/' prefix if present
-					let cleanPath = rawPath.replace(/^\/+/, '').replace(/^files\//, '');
+					// let cleanPath = rawPath.replace(/^\/+/, '').replace(/^files\//, '');
 					// Get the first segment as the base path (e.g., 'global')
-					const basePath = cleanPath.split('/')[0] || 'global';
+					// const basePath = cleanPath.split('/')[0] || 'global';
 
 					// Build thumbnail URL
 					// constructUrl(path, hash, fileName, format, contentTypes, size)
-					const thumbnailUrl = constructUrl(basePath, mediaItem.hash, filename, extension, basePath, 'thumbnail');
+					const thumbnailUrl = constructUrl(mediaItem as any, 'thumbnail');
 
 					return {
 						...mediaItem,
@@ -227,7 +225,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 						path: mediaItem.path ?? 'global',
 						name: mediaItem.filename ?? 'unnamed-media',
 						// Use the item's path if available when constructing the original URL
-						url: constructUrl(basePath, mediaItem.hash, filename, extension, basePath),
+						url: constructUrl(mediaItem as any),
 						thumbnail: {
 							url: thumbnailUrl
 						}

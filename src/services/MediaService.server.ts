@@ -59,7 +59,7 @@ import type { BaseEntity, ISODateString } from '@src/content/types';
 interface MediaBaseWithThumbnails extends MediaBase {
 	thumbnails?: Record<string, ResizedImage | undefined>;
 	originalId?: DatabaseId | null;
-	user: string;
+	user: DatabaseId;
 }
 
 export class MediaService {
@@ -158,7 +158,7 @@ export class MediaService {
 			if (isImage && ext !== 'svg') {
 				// Don't resize SVGs
 				logger.debug('Processing image variants', { fileName, mimeType });
-				resizedImages = await saveResizedImages(imageBuffer, hash, sanitizedFileName, mimeType, ext, basePath);
+				resizedImages = await saveResizedImages(imageBuffer, hash, sanitizedFileName, ext, basePath);
 			}
 
 			logger.info('File upload completed', {
@@ -216,7 +216,7 @@ export class MediaService {
 
 		// USE SERVER-SIDE VALIDATION
 		const validation = validateMediaFileServer(buffer, file.name, this.mimeTypePattern, 50 * 1024 * 1024); // 50MB limit
-		if (!validation.isValid) {
+		if (!validation.valid) {
 			const message = `File validation failed: ${validation.message}`;
 			logger.error(message, {
 				fileName: file.name,
@@ -262,7 +262,7 @@ export class MediaService {
 				url: url, // Store the public URL
 				mimeType: mimeType,
 				size: file.size,
-				user: userId,
+				user: userId as DatabaseId,
 				createdAt: new Date().toISOString() as ISODateString,
 				updatedAt: new Date().toISOString() as ISODateString,
 				metadata: {
@@ -278,7 +278,7 @@ export class MediaService {
 						version: 1,
 						url: url,
 						createdAt: new Date().toISOString() as ISODateString,
-						createdBy: userId
+						createdBy: userId as DatabaseId
 					}
 				],
 				access,
@@ -443,7 +443,7 @@ export class MediaService {
 			if (cachedMedia) {
 				// Basic access check for cached items
 				const isAdmin = roles.some((r) => r.isAdmin);
-				if (isAdmin || cachedMedia.user === user._id || cachedMedia.access === 'public') {
+				if (isAdmin || (cachedMedia as any).user === user._id || (cachedMedia as any).access === 'public') {
 					logger.info('Media retrieved from cache', { id });
 					// Ensure cached media has URL (in case it was cached without it)
 					return this.enrichMediaWithUrl(cachedMedia as unknown as MediaItem);

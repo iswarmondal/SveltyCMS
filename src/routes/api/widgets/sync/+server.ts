@@ -1,143 +1,113 @@
 /**
  * @file src/routes/api/widgets/sync/+server.ts
- * @description API endpoint to sync file system widgets with database
- * This ensures all widgets found in the file system are registered in the database
+ * @description API endpoint to sync filesystem widgets with database (admin only)
+ *
+ * Features:
+ * - Tenant-aware sync
+ * - Core widgets auto-activated
+ * - Custom widgets registered if missing
+ * - Detailed sync report
+ * - Permission enforcement (api:widgets + admin role)
  */
+
 import { json, error } from '@sveltejs/kit';
-import { logger } from '@utils/logger.server';
 import type { RequestHandler } from './$types';
+
+import { logger } from '@utils/logger.server';
 import { hasPermissionWithRoles } from '@src/databases/auth/permissions';
 
-import {
-	widgetStoreActions,
-	widgetFunctions as widgetFunctionsStore,
-	coreWidgets as coreWidgetsStore,
-	customWidgets as customWidgetsStore
-} from '@stores/widgetStore.svelte';
+import { widgetStoreActions, widgetFunctions, coreWidgets } from '@stores/widgetStore.svelte';
 
 export const POST: RequestHandler = async ({ locals, request }) => {
 	const start = performance.now();
 
 	try {
-		const { user } = locals;
+		const { user, roles = [], dbAdapter, tenantId: contextTenantId } = locals;
 
-		// Check authentication
-		if (!user) {
-			throw error(401, 'Unauthorized');
+		if (!user) throw error(401, 'Unauthorized');
+		if (!dbAdapter?.widgets) throw error(500, 'Widget adapter unavailable');
+
+		// Strict permission: api:widgets + admin role
+		const hasApiPerm = hasPermissionWithRoles(user, 'api:widgets', roles);
+		const isAdmin = ['admin', 'super-admin'].includes(user.role ?? '');
+		if (!hasApiPerm || !isAdmin) {
+			logger.warn(`User ${user._id} denied widget sync (missing admin or permission)`);
+			throw error(403, 'Admin access required');
 		}
 
-		// Check permission - only admins can sync widgets
-		const hasWidgetPermission = hasPermissionWithRoles(user, 'api:widgets', locals.roles);
-		const isAdmin = user.role === 'admin' || user.role === 'super-admin';
+		// Tenant resolution
+		const tenantId = request.headers.get('X-Tenant-ID') ?? contextTenantId ?? 'default';
 
-		if (!hasWidgetPermission || !isAdmin) {
-			logger.warn(`User ${user._id} denied access to widget sync due to insufficient permissions`);
-			throw error(403, 'Insufficient permissions - admin access required');
-		}
-
-		const tenantId = request.headers.get('X-Tenant-ID') || locals.tenantId;
-
-		// Initialize widgets to get all from file system
+		// Load all widgets from filesystem
 		await widgetStoreActions.initializeWidgets(tenantId);
 
-		// Get all widget functions from file system
-		let allWidgetFunctions: Record<string, unknown> = {};
-		let coreWidgetNames: string[] = [];
-		let customWidgetNames: string[] = [];
-		widgetFunctionsStore.subscribe(($widgetFunctions) => {
-			allWidgetFunctions = $widgetFunctions;
-		})();
+		// Fetch current DB state
+		const dbRes = await dbAdapter.widgets.findAll();
+		if (!dbRes.success) throw error(500, 'Failed to read widget DB');
+		const dbWidgets = dbRes.data ?? [];
+		const dbNames = new Set(dbWidgets.map((w) => w.name as string));
 
-		coreWidgetsStore.subscribe(($coreWidgets) => {
-			coreWidgetNames = $coreWidgets;
-		})();
-
-		customWidgetsStore.subscribe(($customWidgets) => {
-			customWidgetNames = $customWidgets;
-		})();
-
-		if (!locals.dbAdapter?.widgets) {
-			logger.error('Widget database adapter not available');
-			throw error(500, 'Widget database adapter not available');
-		}
-
-		// Get current widgets from database
-		const dbResult = await locals.dbAdapter.widgets.findAll();
-		const dbWidgets: Array<Record<string, unknown>> = dbResult.success ? (dbResult.data as unknown as Array<Record<string, unknown>>) || [] : [];
-		const dbWidgetNames = dbWidgets.map((w) => w.name as string);
-		logger.info('Starting widget sync...', {
-			fileSystem: Object.keys(allWidgetFunctions).length,
-			database: dbWidgets.length,
-			core: coreWidgetNames.length,
-			custom: customWidgetNames.length
-		});
-
-		// Sync results tracking
 		const results = {
 			created: [] as string[],
-			updated: [] as string[],
 			activated: [] as string[],
 			skipped: [] as string[],
 			errors: [] as { widget: string; error: string }[]
 		};
 
-		// Sync each widget from file system to database
-		for (const [name, widgetFn] of Object.entries(allWidgetFunctions)) {
+		// Sync each filesystem widget
+		for (const [name, fn] of Object.entries(widgetFunctions)) {
 			try {
-				const isCore = coreWidgetNames.includes(name);
-				const exists = dbWidgetNames.includes(name);
-				const widget = widgetFn as Record<string, unknown>;
+				const isCore = coreWidgets.includes(name);
+				const exists = dbNames.has(name);
+				const deps = ((fn as any).__dependencies as string[] | undefined) ?? [];
 
 				if (exists) {
-					// Widget exists in DB - ensure it's active if it's core
 					const dbWidget = dbWidgets.find((w) => w.name === name);
-					if (isCore && dbWidget && !(dbWidget.isActive as boolean)) {
-						await locals.dbAdapter.widgets.update(dbWidget._id as unknown as import('@databases/dbInterface').DatabaseId, { isActive: true });
+					if (isCore && !(dbWidget?.isActive as boolean)) {
+						await dbAdapter.widgets.update(dbWidget!._id, { isActive: true });
 						results.activated.push(name);
-						logger.trace(`Activated core widget: ${name}`);
 					} else {
 						results.skipped.push(name);
 					}
 				} else {
-					// Widget doesn't exist - create it
-					const createResult = await locals.dbAdapter.widgets.register({
+					const createRes = await dbAdapter.widgets.register({
 						name,
-						isActive: isCore, // Core widgets are active by default
+						isActive: isCore,
 						instances: {},
-						dependencies: (widget.__dependencies as string[]) || []
+						dependencies: deps
 					});
-					if (createResult.success) {
+					if (createRes.success) {
 						results.created.push(name);
-						logger.info(`Created widget in database: ${name} (${isCore ? 'core' : 'custom'})`);
 					} else {
-						results.errors.push({
-							widget: name,
-							error: createResult.error?.message || 'Unknown error'
-						});
+						results.errors.push({ widget: name, error: createRes.error?.message ?? 'Unknown' });
 					}
 				}
 			} catch (err) {
-				const errorMsg = err instanceof Error ? err.message : String(err);
-				results.errors.push({ widget: name, error: errorMsg });
-				logger.error(`Error syncing widget ${name}:`, err);
+				results.errors.push({
+					widget: name,
+					error: err instanceof Error ? err.message : String(err)
+				});
+				logger.error(`Sync failed for widget ${name}`, err);
 			}
 		}
 
 		const duration = performance.now() - start;
 
 		logger.info('Widget sync completed', {
-			...results,
-			duration: `${duration.toFixed(2)}ms`,
-			tenantId
+			tenantId,
+			created: results.created.length,
+			activated: results.activated.length,
+			skipped: results.skipped.length,
+			errors: results.errors.length,
+			duration: `${duration.toFixed(2)}ms`
 		});
 
 		return json({
 			success: true,
 			message: 'Widget sync completed',
 			results: {
-				total: Object.keys(allWidgetFunctions).length,
+				total: Object.keys(widgetFunctions).length,
 				created: results.created.length,
-				updated: results.updated.length,
 				activated: results.activated.length,
 				skipped: results.skipped.length,
 				errors: results.errors.length
@@ -148,13 +118,8 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		});
 	} catch (err) {
 		const duration = performance.now() - start;
-		const message = `Failed to sync widgets: ${err instanceof Error ? err.message : String(err)}`;
-		logger.error(message, { duration: `${duration.toFixed(2)}ms` });
-
-		if (err instanceof Response) {
-			throw err;
-		}
-
-		throw error(500, message);
+		const msg = err instanceof Error ? err.message : String(err);
+		logger.error('Widget sync failed', { error: msg, duration: `${duration.toFixed(2)}ms` });
+		throw error(500, 'Widget sync failed');
 	}
 };

@@ -1,302 +1,122 @@
 /**
  * @file src/utils/crypto.ts
- * @description Enterprise-grade cryptography utilities using Argon2 for key derivation
+ * @description Server-only crypto utilities (Argon2 + AES-256-GCM)
  *
- * QUANTUM COMPUTING SECURITY NOTICE:
- * ==================================
- * This module is designed with quantum resistance in mind:
- *
- * - Argon2id: Memory-hard algorithm that resists quantum speedup (quantum computers
- *   don't have memory advantages over classical computers)
- * - AES-256-GCM: Even with Grover's algorithm reducing it to 128-bit quantum security,
- *   2^128 operations remain computationally infeasible
- * - No RSA/ECC: We don't use public-key cryptography vulnerable to Shor's algorithm
- *
- * Current Status: SECURE against quantum threats for next 15-30+ years
- * Migration Path: Plan to add CRYSTALS-Kyber/Dilithium (NIST PQC standards) around 2030
- *
- * This module provides:
- * - Password hashing with Argon2id (winner of Password Hashing Competition)
- * - Key derivation from passwords using Argon2 (more secure than PBKDF2)
- * - AES-256-GCM encryption/decryption with Argon2-derived keys
- * - Secure random token generation
- * - SHA256 checksum generation for data integrity
- *
- * @see https://csrc.nist.gov/projects/post-quantum-cryptography for PQC updates
+ * Security:
+ * - Argon2id for password hashing & key derivation
+ * - AES-256-GCM authenticated encryption
+ * - Quantum-resistant design (memory-hard + 128-bit quantum security)
+ * - Secure random generation
  */
 
 import { logger } from '@utils/logger';
 
-// Import argon2 and crypto (server-side only)
 let argon2: typeof import('argon2') | null = null;
 let crypto: typeof import('crypto') | null = null;
 
 if (typeof window === 'undefined') {
-	try {
-		argon2 = await import('argon2');
-		crypto = await import('crypto');
-	} catch (error) {
-		logger.error('Failed to load cryptographic modules', { error });
-	}
+	import('argon2').then((m) => (argon2 = m)).catch((err) => logger.error('Argon2 load failed', err));
+	import('crypto').then((m) => (crypto = m)).catch((err) => logger.error('Crypto load failed', err));
 }
 
-/**
- * Argon2 configuration for enterprise security
- *
- * QUANTUM RESISTANCE NOTES:
- * - Argon2 is inherently quantum-resistant due to its memory-hard property
- * - Grover's algorithm doesn't provide significant speedup for memory-bound operations
- * - The 64 MB memory requirement per hash limits quantum computer advantages
- * - Quantum computers excel at computation, not memory access patterns
- *
- * These settings provide a good balance between security and performance
- * while maintaining strong resistance against both classical and quantum attacks.
- */
-export const argon2Config = {
-	// Memory cost in KiB (64 MB) - Makes attacks expensive even with quantum computers
-	memory: 65536,
-	// Time cost (number of iterations) - Adds computational complexity
+// Argon2 config (memory-hard, quantum-resistant)
+const ARGON2 = {
+	memory: 65536, // 64 MiB
 	time: 3,
-	// Parallelism factor (number of threads) - Optimizes for modern CPUs
 	parallelism: 4,
-	// Use Argon2id (hybrid version - best for most use cases)
 	type: 2 as const, // argon2id
-	// Output hash length in bytes
 	hashLength: 32
 };
 
-// AES-256-GCM encryption configuration
-// QUANTUM RESISTANCE: AES-256 provides 128-bit quantum security (Grover's algorithm)
-// which is still computationally infeasible (2^128 operations = billions of years)
-export const encryptionConfig = {
-	algorithm: 'aes-256-gcm' as const,
-	keyLength: 32, // 256 bits (128-bit quantum security)
-	ivLength: 16, // 128 bits
-	saltLength: 32, // 256 bits (128-bit quantum security)
-	authTagLength: 16 // 128 bits (provides data integrity)
+// AES-256-GCM (128-bit quantum security via Grover)
+const AES = {
+	algo: 'aes-256-gcm' as const,
+	keyLen: 32,
+	ivLen: 12, // GCM recommended
+	tagLen: 16,
+	saltLen: 32
 };
 
-/**
- * Hash a password using Argon2id
- *
- * @param password - Plain text password to hash
- * @returns Promise resolving to hashed password
- * @throws Error if argon2 is not available
- */
-export async function hashPassword(password: string): Promise<string> {
-	if (!argon2) {
-		throw new Error('Argon2 not available - server-side only');
-	}
-
-	return argon2.hash(password, {
-		...argon2Config,
-		type: argon2.argon2id
-	});
+/** Hash password with Argon2id */
+export async function hashPassword(pw: string): Promise<string> {
+	if (!argon2) throw new Error('Argon2 unavailable (server only)');
+	return argon2.hash(pw, { ...ARGON2, type: argon2.argon2id });
 }
 
-/**
- * Verify a password against its hash using Argon2
- *
- * @param password - Plain text password to verify
- * @param hash - Hashed password to compare against
- * @returns Promise resolving to true if password matches
- * @throws Error if argon2 is not available
- */
-export async function verifyPassword(password: string, hash: string): Promise<boolean> {
-	if (!argon2) {
-		throw new Error('Argon2 not available - server-side only');
-	}
-
-	return argon2.verify(hash, password);
+/** Verify password */
+export async function verifyPassword(pw: string, hash: string): Promise<boolean> {
+	if (!argon2) throw new Error('Argon2 unavailable (server only)');
+	return argon2.verify(hash, pw);
 }
 
-/**
- * Derive a cryptographic key from a password using Argon2
- * This is more secure than PBKDF2 for key derivation
- *
- * QUANTUM RESISTANCE:
- * Argon2's memory-hard property makes it quantum-resistant because:
- * 1. Quantum computers don't have memory advantages (limited qubits)
- * 2. Memory access patterns can't be parallelized effectively by quantum algorithms
- * 3. Grover's algorithm doesn't help with memory-bound operations
- *
- * This makes Argon2 an excellent choice for long-term key derivation security.
- *
- * @param password - Password to derive key from
- * @param salt - Salt for key derivation (should be unique per encryption)
- * @returns Promise resolving to derived key buffer
- * @throws Error if argon2 is not available
- */
-export async function deriveKey(password: string, salt: Buffer): Promise<Buffer> {
-	if (!argon2) {
-		throw new Error('Argon2 not available - server-side only');
-	}
-
-	// Use Argon2 to derive a raw key (not encoded)
-	const hash = await argon2.hash(password, {
-		...argon2Config,
-		type: argon2.argon2id,
-		salt,
-		raw: true
-	});
-
-	// Ensure key is exactly 32 bytes for AES-256
-	return Buffer.from(hash).subarray(0, encryptionConfig.keyLength);
+/** Derive key from password + salt */
+async function deriveKey(pw: string, salt: Buffer): Promise<Buffer> {
+	if (!argon2) throw new Error('Argon2 unavailable');
+	const raw = await argon2.hash(pw, { ...ARGON2, salt, raw: true });
+	return Buffer.from(raw).subarray(0, AES.keyLen);
 }
 
-/**
- * Encrypt data using AES-256-GCM with Argon2-derived key
- *
- * QUANTUM RESISTANCE:
- * - AES-256: Even with Grover's algorithm, maintains 128-bit quantum security
- * - GCM mode: Provides authenticated encryption (integrity + confidentiality)
- * - Argon2 key derivation: Quantum-resistant due to memory-hard property
- *
- * This combination provides strong security against both classical and quantum attacks.
- * For ultra-long-term storage (20+ years), consider adding post-quantum key encapsulation
- * (CRYSTALS-Kyber) in hybrid mode once NIST standards are widely implemented.
- *
- * @param data - Data object to encrypt
- * @param password - Password to derive encryption key from
- * @returns Base64-encoded encrypted data (salt + iv + authTag + ciphertext)
- * @throws Error if crypto modules are not available
- */
-export async function encryptData(data: Record<string, unknown>, password: string): Promise<string> {
-	if (!crypto || !argon2) {
-		throw new Error('Crypto modules not available - server-side only');
-	}
+/** Encrypt object */
+export async function encrypt(data: Record<string, unknown>, pw: string): Promise<string> {
+	if (!crypto || !argon2) throw new Error('Crypto unavailable (server only)');
 
-	// Generate random salt and IV
-	const salt = crypto.randomBytes(encryptionConfig.saltLength);
-	const iv = crypto.randomBytes(encryptionConfig.ivLength);
+	const salt = crypto.randomBytes(AES.saltLen);
+	const iv = crypto.randomBytes(AES.ivLen);
+	const key = await deriveKey(pw, salt);
 
-	// Derive key using Argon2 (more secure than PBKDF2)
-	const key = await deriveKey(password, salt);
+	const cipher = crypto.createCipheriv(AES.algo, key, iv);
+	const plaintext = Buffer.from(JSON.stringify(data), 'utf8');
+	const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+	const tag = cipher.getAuthTag();
 
-	// Create cipher
-	const cipher = crypto.createCipheriv(encryptionConfig.algorithm, key, iv);
-
-	// Encrypt data
-	const plaintext = JSON.stringify(data);
-	const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
-
-	// Get authentication tag
-	const authTag = cipher.getAuthTag();
-
-	// Combine: salt + iv + authTag + encrypted data
-	const combined = Buffer.concat([salt, iv, authTag, encrypted]);
-
-	logger.debug('Data encrypted successfully', {
-		saltLength: salt.length,
-		ivLength: iv.length,
-		authTagLength: authTag.length,
-		encryptedLength: encrypted.length
-	});
-
+	const combined = Buffer.concat([salt, iv, tag, encrypted]);
 	return combined.toString('base64');
 }
 
-/**
- * Decrypt data using AES-256-GCM with Argon2-derived key
- *
- * @param encryptedData - Base64-encoded encrypted data
- * @param password - Password to derive decryption key from
- * @returns Decrypted data object
- * @throws Error if decryption fails or password is incorrect
- */
-export async function decryptData(encryptedData: string, password: string): Promise<Record<string, unknown>> {
-	if (!crypto || !argon2) {
-		throw new Error('Crypto modules not available - server-side only');
-	}
+/** Decrypt to object */
+export async function decrypt(encrypted: string, pw: string): Promise<Record<string, unknown>> {
+	if (!crypto || !argon2) throw new Error('Crypto unavailable (server only)');
 
-	try {
-		// Decode base64
-		const combined = Buffer.from(encryptedData, 'base64');
+	const buf = Buffer.from(encrypted, 'base64');
 
-		// Extract components
-		let offset = 0;
-		const salt = combined.subarray(offset, offset + encryptionConfig.saltLength);
-		offset += encryptionConfig.saltLength;
+	let pos = 0;
+	const salt = buf.subarray(pos, (pos += AES.saltLen));
+	const iv = buf.subarray(pos, (pos += AES.ivLen));
+	const tag = buf.subarray(pos, (pos += AES.tagLen));
+	const ciphertext = buf.subarray(pos);
 
-		const iv = combined.subarray(offset, offset + encryptionConfig.ivLength);
-		offset += encryptionConfig.ivLength;
+	const key = await deriveKey(pw, salt);
+	const decipher = crypto.createDecipheriv(AES.algo, key, iv);
+	decipher.setAuthTag(tag);
 
-		const authTag = combined.subarray(offset, offset + encryptionConfig.authTagLength);
-		offset += encryptionConfig.authTagLength;
-
-		const encrypted = combined.subarray(offset);
-
-		// Derive key using same password and salt
-		const key = await deriveKey(password, salt);
-
-		// Create decipher
-		const decipher = crypto.createDecipheriv(encryptionConfig.algorithm, key, iv);
-		decipher.setAuthTag(authTag);
-
-		// Decrypt data
-		const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
-
-		logger.debug('Data decrypted successfully', {
-			decryptedLength: decrypted.length
-		});
-
-		return JSON.parse(decrypted.toString('utf8'));
-	} catch (error) {
-		logger.error('Decryption failed', { error });
-		throw new Error('Failed to decrypt data. Password may be incorrect or data corrupted.');
-	}
+	const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+	return JSON.parse(decrypted.toString('utf8'));
 }
 
-/**
- * Creates a SHA256 checksum for any given data object.
- * Useful for data integrity checks and detecting changes.
- *
- * @param data - The data to hash (will be stringified).
- * @returns A hex-encoded SHA256 hash.
- * @throws Error if crypto is not available.
- */
-export function createChecksum(data: unknown): string {
-	if (!crypto) {
-		throw new Error('Crypto not available - server-side only');
-	}
-	const str = JSON.stringify(data);
-	return crypto.createHash('sha256').update(str).digest('hex');
+/** SHA-256 checksum */
+export function checksum(data: unknown): string {
+	if (!crypto) throw new Error('Crypto unavailable');
+	return crypto.createHash('sha256').update(JSON.stringify(data)).digest('hex');
 }
 
-/**
- * Generate a secure random token
- *
- * @param length - Length of token in bytes (default: 32)
- * @returns Hex-encoded random token
- * @throws Error if crypto is not available
- */
-export function generateRandomToken(length: number = 32): string {
-	if (!crypto) {
-		throw new Error('Crypto not available - server-side only');
-	}
+/** Aliases for backward compatibility */
+export const createChecksum = checksum;
+export const encryptData = encrypt;
+export const decryptData = decrypt;
 
-	return crypto.randomBytes(length).toString('hex');
+/** Random token */
+export function randomToken(bytes = 32): string {
+	if (!crypto) throw new Error('Crypto unavailable');
+	return crypto.randomBytes(bytes).toString('hex');
 }
 
-/**
- * Generate a secure random UUID
- *
- * @returns UUID string
- * @throws Error if crypto is not available
- */
-export function generateUUID(): string {
-	if (!crypto) {
-		throw new Error('Crypto not available - server-side only');
-	}
-
+/** UUID v4 */
+export function uuid(): string {
+	if (!crypto) throw new Error('Crypto unavailable');
 	return crypto.randomUUID();
 }
 
-/**
- * Check if cryptographic modules are available
- *
- * @returns True if crypto and argon2 are available
- */
-export function isCryptoAvailable(): boolean {
+/** Check availability */
+export function cryptoReady(): boolean {
 	return crypto !== null && argon2 !== null;
 }

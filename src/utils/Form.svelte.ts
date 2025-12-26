@@ -1,103 +1,91 @@
 /**
- * @file: src/utils/Form.svelte.ts
- * @description: Form class for handling form data and validation
- *
- * @requires @sveltejs/kit - For action and submit function types
- * @requires valibot - For schema definition and validation
+ * @file src/utils/Form.svelte.ts
+ * @description Reactive form handler with Valibot validation & SvelteKit enhance support
  */
 
 import type { ActionResult, SubmitFunction } from '@sveltejs/kit';
-import { safeParse, type BaseSchema, flatten } from 'valibot';
+import { safeParse, flatten } from 'valibot';
 
-type EnhanceOptions = {
+interface EnhanceCallbacks {
 	onSubmit?: (input: Parameters<SubmitFunction>[0]) => void;
-	onResult?: (input: { result: ActionResult; update: (opts?: { reset: boolean }) => Promise<void> }) => void | Promise<void>;
-};
+	onResult?: (input: { result: ActionResult; update: () => Promise<void> }) => void | Promise<void>;
+}
 
 export class Form<T extends Record<string, any>> {
+	/** Form data */
 	data = $state<T>({} as T);
+	/** Validation errors */
 	errors = $state<Record<string, string[]>>({});
+	/** Submission state */
 	submitting = $state(false);
+	/** Server message */
 	message = $state<string | undefined>(undefined);
 
 	constructor(
-		initialData: T,
-		private schema?: BaseSchema<any, any, any>
+		initial: T,
+		private schema?: any
 	) {
-		this.data = { ...initialData };
+		this.data = { ...initial };
 	}
 
-	// Helper to reset form
-	reset(newData?: T) {
-		if (newData) {
-			this.data = { ...newData };
-		}
-		this.errors = {};
+	/** Reset form state */
+	reset(to?: Partial<T>) {
+		if (to) Object.assign(this.data, to);
+		this.errors = {} as any;
 		this.message = undefined;
 		this.submitting = false;
 	}
 
-	// Validate form data against schema
+	/** Client-side validation */
 	validate(): boolean {
-		this.errors = {};
+		this.errors = {} as any;
 		this.message = undefined;
 
-		if (this.schema) {
-			const result = safeParse(this.schema, this.data);
-			if (!result.success) {
-				const flatErrors = flatten(result.issues).nested;
-				this.errors = flatErrors as Record<string, string[]>;
-				return false;
-			}
+		if (!this.schema) return true;
+
+		const result = safeParse(this.schema, this.data);
+		if (!result.success) {
+			const flat = flatten(result.issues);
+			this.errors = flat.nested as Record<string, string[]>;
+			return false;
 		}
 		return true;
 	}
 
-	// Enhance action for SvelteKit forms
-	enhance(options?: EnhanceOptions): SubmitFunction {
+	/** SvelteKit form enhance */
+	enhance(callbacks?: EnhanceCallbacks): SubmitFunction {
 		return (input) => {
+			const { formData, cancel } = input;
 			this.submitting = true;
+			this.errors = {} as any;
 			this.message = undefined;
-			this.errors = {};
 
-			if (options?.onSubmit) {
-				options.onSubmit(input);
-				// Note: We can't easily check if cancel() was called effectively unless we wrap it,
-				// but standard SvelteKit cancel() throws or sets a flag.
-				// For now we assume if onSubmit cancels, it handles it.
+			// Update data from FormData
+			for (const [k, v] of formData.entries()) {
+				(this.data as any)[k] = v;
 			}
 
-			// Client-side validation
-			if (this.schema) {
-				const result = safeParse(this.schema, this.data);
-				if (!result.success) {
-					const flatErrors = flatten(result.issues).nested;
-					this.errors = flatErrors as Record<string, string[]>;
-					this.submitting = false;
-					input.cancel();
-					return;
-				}
+			callbacks?.onSubmit?.(input);
+
+			// Client validation
+			if (!this.validate()) {
+				cancel();
+				this.submitting = false;
+				return;
 			}
 
-			return async (resultInput) => {
-				const { result, update } = resultInput;
+			return async ({ result, update }) => {
 				this.submitting = false;
 
-				if (result.type === 'failure') {
-					if (result.data?.errors) {
-						this.errors = result.data.errors as Record<string, string[]>;
-					}
-					if (result.data?.message) {
-						this.message = result.data.message as string;
-					}
-				} else if (result.type === 'success') {
-					if (result.data?.message) {
-						this.message = result.data.message as string;
-					}
+				if (result.type === 'success' && result.data?.message) {
+					this.message = result.data.message as string;
+				} else if (result.type === 'failure') {
+					if (result.data?.errors) this.errors = result.data.errors;
+					if (result.data?.message) this.message = result.data.message as string;
 				}
 
-				if (options?.onResult) {
-					await options.onResult(resultInput);
+				if (callbacks?.onResult) {
+					await callbacks.onResult({ result, update });
 				} else {
 					await update();
 				}
@@ -105,44 +93,38 @@ export class Form<T extends Record<string, any>> {
 		};
 	}
 
-	// Manual submit handler for standard API endpoints
-	async submit(url: string, options: RequestInit = {}) {
+	/** Manual fetch submit */
+	async submit(url: string, opts: RequestInit = {}): Promise<{ success: boolean; data?: any; error?: any }> {
 		this.submitting = true;
-		this.message = undefined;
 		this.errors = {};
+		this.message = undefined;
 
-		// Client-side validation
-		if (this.schema) {
-			const result = safeParse(this.schema, this.data);
-			if (!result.success) {
-				const flatErrors = flatten(result.issues).nested;
-				this.errors = flatErrors as Record<string, string[]>;
-				this.submitting = false;
-				return { success: false, errors: this.errors };
-			}
+		if (!this.validate()) {
+			this.submitting = false;
+			return { success: false };
 		}
 
 		try {
-			const response = await fetch(url, {
+			const res = await fetch(url, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				...options,
-				body: JSON.stringify(this.data)
+				body: JSON.stringify(this.data),
+				...opts
 			});
 
-			const data = await response.json();
+			const json = await res.json();
 
-			if (!response.ok) {
-				this.errors = data.errors || {};
-				this.message = data.message || 'An error occurred';
-				return { success: false, data };
+			if (!res.ok) {
+				this.errors = json.errors ?? {};
+				this.message = json.message ?? 'Request failed';
+				return { success: false, data: json };
 			}
 
-			this.message = data.message;
-			return { success: true, data };
-		} catch (error) {
-			this.message = error instanceof Error ? error.message : 'Network error';
-			return { success: false, error };
+			this.message = json.message;
+			return { success: true, data: json };
+		} catch (err) {
+			this.message = err instanceof Error ? err.message : 'Network error';
+			return { success: false, error: err };
 		} finally {
 			this.submitting = false;
 		}

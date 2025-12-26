@@ -46,7 +46,7 @@
 	import { showConfirm } from '@utils/modalUtils';
 	import { showToast } from '@utils/toast';
 
-	import { widgetFunctions as widgetFunctionsStore } from '@stores/widgetStore.svelte';
+	import { widgetFunctions as widgetFunctionsSignal } from '@stores/widgetStore.svelte';
 
 	// --- PERFORMANCE FIX: DYNAMIC WIDGET IMPORTS ---
 	// Lazy-load widgets for code-splitting (eager: false is default)
@@ -79,13 +79,8 @@
 	}
 	// --- END PERFORMANCE FIX ---
 
-	let widgetFunctions = $state<Record<string, any>>({});
-	$effect(() => {
-		const unsubscribe = widgetFunctionsStore.subscribe((value) => {
-			widgetFunctions = value;
-		});
-		return unsubscribe;
-	});
+	// Use derived signal for widgets
+	const widgetFunctions = $derived(widgetFunctionsSignal || {});
 
 	// --- 1. RECEIVE DATA AS PROPS ---
 	let {

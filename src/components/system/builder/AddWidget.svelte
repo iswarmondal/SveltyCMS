@@ -27,12 +27,13 @@
 		})
 	}: AddWidgetProps = $props();
 
-	const widget_keys = Object.keys($widgetFunctions);
+	// widgetFunctions is now a derived signal, use direct access in derived
+	const widget_keys = $derived(Object.keys(widgetFunctions || {}));
 	let guiSchema = $state<WidgetFunction['GuiSchema'] | undefined>(undefined);
 
 	$effect(() => {
 		if (selected_widget) {
-			const widgetFn = $widgetFunctions[selected_widget];
+			const widgetFn = widgetFunctions[selected_widget];
 			guiSchema = widgetFn?.GuiSchema as WidgetFunction['GuiSchema'];
 		}
 	});

@@ -32,12 +32,12 @@
 	import HighlightedText from './HighlightedText.svelte';
 
 	// Stores
-	import { isSearchVisible, globalSearchIndex, triggerActionStore } from '@utils/globalSearchIndex';
-	import type { SearchData } from '@utils/globalSearchIndex';
+	import { isSearchVisible, globalSearchIndex } from '@utils/globalSearchIndex.svelte';
+	import type { SearchData } from '@utils/globalSearchIndex.svelte';
 
 	// Types
 	interface Trigger {
-		path: string;
+		path?: string;
 		action?: (() => void | Promise<void>)[];
 	}
 
@@ -123,7 +123,7 @@
 			const { path, action } = trigger;
 
 			// Navigate if path is different
-			if (window.location.pathname !== path) {
+			if (path && window.location.pathname !== path) {
 				// FIX: Added await and eslint ignore
 				// eslint-disable-next-line svelte/no-navigation-without-resolve
 				await goto(path);
@@ -131,7 +131,9 @@
 
 			// Handle actions if present
 			if (action) {
-				triggerActionStore.set(action);
+				for (const act of action) {
+					act();
+				}
 			}
 		}
 

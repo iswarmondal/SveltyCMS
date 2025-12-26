@@ -8,9 +8,6 @@
 	// Components
 	import SiteName from '@components/SiteName.svelte';
 	import Logo from '@components/system/icons/SveltyCMS_Logo.svelte';
-
-	//ParaglideJS
-	import * as m from '@src/paraglide/messages';
 </script>
 
 <!-- CSS Logo -->
@@ -80,9 +77,7 @@
 				<SiteName highlight="CMS" />
 			</div>
 			<!-- Slogan -->
-			<div class="-mt-[1px] text-[12px] font-bold text-secondary-500">
-				{m.logo_slogan()}
-			</div>
+			<div class="-mt-[1px] text-[12px] font-bold text-secondary-500">The Svelte/SvelteKit CMS</div>
 		</div>
 	</div>
 </a>

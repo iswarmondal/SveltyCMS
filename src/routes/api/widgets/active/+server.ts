@@ -5,7 +5,7 @@
 import { json, error } from '@sveltejs/kit';
 import { logger } from '@utils/logger.server';
 import type { RequestHandler } from './$types';
-import { widgetStoreActions, getWidgetFunction, isWidgetCore } from '@stores/widgetStore.svelte';
+import { widgetStoreActions, getWidgetFunction } from '@stores/widgetStore.svelte';
 import { cacheService } from '@src/databases/CacheService';
 
 export const GET: RequestHandler = async ({ locals, url }) => {
@@ -83,15 +83,15 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		// Enrich widget data with metadata from widget functions (3-pillar architecture)
 		const enrichedWidgets = widgetNames.map((name) => {
 			const widgetFn = getWidgetFunction(name);
+			const f = widgetFn as any;
 			return {
 				name,
-				isCore: isWidgetCore(name),
-				icon: widgetFn?.Icon || 'mdi:puzzle',
-				description: widgetFn?.Description || '',
-				// 3-Pillar Architecture metadata
-				inputComponentPath: widgetFn?.__inputComponentPath || '',
-				displayComponentPath: widgetFn?.__displayComponentPath || '',
-				dependencies: widgetFn?.__dependencies || []
+				pillar: {
+					// 3-Pillar Architecture metadata
+					inputComponentPath: f?.__inputComponentPath || '',
+					displayComponentPath: f?.__displayComponentPath || '',
+					dependencies: f?.__dependencies || []
+				}
 			};
 		});
 

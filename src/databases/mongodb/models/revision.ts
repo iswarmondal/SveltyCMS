@@ -18,7 +18,7 @@ import type { Model } from 'mongoose';
 import type { ContentRevision, DatabaseResult } from '@src/databases/dbInterface';
 import type { DatabaseId } from '@src/content/types';
 import { generateId } from '@src/databases/mongodb/methods/mongoDBUtils';
-import { toISOString } from '@utils/dateUtils';
+import { toISO as toISOString } from '@utils/dateUtils';
 
 // System Logger
 import { logger } from '@utils/logger';

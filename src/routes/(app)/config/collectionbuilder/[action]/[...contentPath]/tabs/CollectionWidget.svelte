@@ -14,7 +14,6 @@ component
 	// Components
 	import VerticalList from '@components/VerticalList.svelte';
 	import { widgetFunctions } from '@stores/widgetStore.svelte';
-	import { get } from 'svelte/store';
 	// ParaglideJS
 	import * as m from '@src/paraglide/messages';
 
@@ -41,7 +40,7 @@ component
 				field.widget?.Name || // For existing widgets
 				field.__type || // For schema-defined widgets
 				field.type || // Backup type field
-				Object.keys(get(widgetFunctions)).find((key) => field[key]) || // Check if field has widget property
+				Object.keys(widgetFunctions).find((key) => field[key]) || // Check if field has widget property
 				'Unknown Widget'; // Fallback
 
 			return {
@@ -92,7 +91,7 @@ component
 			response: (r: { selectedWidget: string } | undefined) => {
 				if (!r) return;
 				const { selectedWidget } = r;
-				const widgetInstance = get(widgetFunctions)[selectedWidget];
+				const widgetInstance = widgetFunctions[selectedWidget];
 				if (selectedWidget && widgetInstance) {
 					// Create a new widget object with the selected widget data
 					const newWidget = {
@@ -156,7 +155,7 @@ component
 	async function handleSave() {
 		try {
 			const updatedFields = fields.map((field) => {
-				const widgetInstance = field.widget?.Name ? get(widgetFunctions)[field.widget.Name] : undefined;
+				const widgetInstance = field.widget?.Name ? widgetFunctions[field.widget.Name] : undefined;
 				if (field.widget?.Name && widgetInstance) {
 					const GuiFields = getGuiFields({ key: field.widget.Name }, asAny(widgetInstance.GuiSchema));
 					for (const [property, value] of Object.entries(field)) {

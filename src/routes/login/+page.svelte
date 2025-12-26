@@ -14,10 +14,9 @@ Features:
 
 <script lang="ts">
 	import { logger } from '@utils/logger';
+	import { onMount } from 'svelte';
 	import { getPublicSetting, publicEnv } from '@src/stores/globalSettings.svelte';
-	// Components
-	import Seasons from '@components/system/icons/Seasons.svelte';
-	import SveltyCMSLogoFull from '@components/system/icons/SveltyCMS_LogoFull.svelte';
+	// Components that use Paraglide are dynamically imported in onMount to avoid SSR issues
 	import SignIn from './components/SignIn.svelte';
 	import SignUp from './components/SignUp.svelte';
 	import VersionCheck from '@components/VersionCheck.svelte';
@@ -89,6 +88,22 @@ Features:
 	let searchInput: HTMLInputElement | null = $state(null);
 	let isTransitioning = $state(false);
 	let debounceTimeout: ReturnType<typeof setTimeout> | undefined = $state();
+	let LogoFullComponent: typeof import('@components/system/icons/SveltyCMS_LogoFull.svelte').default | null = $state(null);
+	let SeasonsComponent: typeof import('@components/system/icons/Seasons.svelte').default | null = $state(null);
+
+	// Dynamically import components only in browser to avoid Paraglide SSR issues
+	onMount(async () => {
+		try {
+			const [logoModule, seasonsModule] = await Promise.all([
+				import('@components/system/icons/SveltyCMS_LogoFull.svelte'),
+				import('@components/system/icons/Seasons.svelte')
+			]);
+			LogoFullComponent = logoModule.default;
+			SeasonsComponent = seasonsModule.default;
+		} catch (err) {
+			logger.error('Failed to load login components:', err);
+		}
+	});
 
 	// Derived state using $derived rune
 	const availableLanguages = $derived([...availableLocales].sort((a, b) => getLanguageName(a, 'en').localeCompare(getLanguageName(b, 'en'))));
@@ -361,11 +376,17 @@ Features:
 			</div>
 		{/if}
 
-		<!-- CMS Logo -->
+		<!-- CMS Logo (dynamically loaded to avoid Paraglide SSR issues) -->
 		<div class="absolute left-1/2 top-1/4 -translate-x-1/2 -translate-y-1/2 transform items-center justify-center">
-			<SveltyCMSLogoFull />
-			<!-- Seasons -->
-			<Seasons />
+			{#if LogoFullComponent}
+				{@const Logo = LogoFullComponent}
+				<Logo />
+			{/if}
+			<!-- Seasons (dynamically loaded) -->
+			{#if SeasonsComponent}
+				{@const Seasons = SeasonsComponent}
+				<Seasons />
+			{/if}
 		</div>
 
 		<!-- Language Select -->

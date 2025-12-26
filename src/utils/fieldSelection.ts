@@ -1,177 +1,100 @@
 /**
  * @file src/utils/fieldSelection.ts
- * @description Utilities for optimizing database queries by selecting only necessary fields
+ * @description Optimized field selection for database queries
  *
- * Performance Benefits:
- * - Reduces database query payload by 50-80%
- * - Decreases network transfer time
- * - Improves cache efficiency
- * - Faster serialization/deserialization
- *
- * @example
- * const fields = getDisplayFields(collection, 'list');
- * // Returns: ['_id', 'title', 'status', 'createdAt', 'author']
- * // Instead of all 50+ fields in the collection
+ * Benefits:
+ * - Reduces payload by 50-80%
+ * - Faster queries & serialization
+ * - Better cache efficiency
  */
 
 import type { Schema } from '@src/content/types';
 import { logger } from './logger';
 
-/**
- * Fields that are always included regardless of view mode
- */
-const ESSENTIAL_FIELDS = ['_id', 'status', 'createdAt', 'updatedAt', 'createdBy', 'updatedBy'] as const;
+const ESSENTIAL = ['_id', 'status', 'createdAt', 'updatedAt', 'createdBy', 'updatedBy'] as const;
 
-/**
- * View mode types for field selection
- */
 export type ViewMode = 'list' | 'edit' | 'preview';
 
-/**
- * Configuration for which fields to display in different views
- */
-export interface FieldSelectionConfig {
-	/** Maximum number of fields to display in list view (excluding essential fields) */
+export interface SelectionConfig {
 	maxListFields?: number;
-	/** Custom field names to always include in list view */
 	customListFields?: string[];
-	/** Whether to include all fields marked as 'showInList' */
 	respectShowInList?: boolean;
 }
 
 /**
- * Gets the optimal set of fields to select based on view mode
- *
- * @param collection - The collection schema
- * @param mode - The view mode (list, edit, preview)
- * @param config - Optional configuration for field selection
- * @returns Array of field names to select from database
+ * Get optimal fields for a view mode
  */
-export function getDisplayFields(collection: Schema, mode: ViewMode = 'list', config: FieldSelectionConfig = {}): string[] {
+export function getDisplayFields(collection: Schema, mode: ViewMode = 'list', config: SelectionConfig = {}): string[] {
 	const { maxListFields = 5, customListFields = [], respectShowInList = true } = config;
 
-	// Edit mode needs all fields
-	if (mode === 'edit') {
-		return ['*']; // Query all fields
-	}
+	// Edit needs everything
+	if (mode === 'edit') return ['*'];
 
-	// Start with essential fields
-	const selectedFields = new Set<string>([...ESSENTIAL_FIELDS]);
+	const selected = new Set<string>(ESSENTIAL);
+	customListFields.forEach((f) => selected.add(f));
 
-	// Add custom fields
-	customListFields.forEach((field) => selectedFields.add(field));
+	if (mode === 'list' && collection.fields?.length) {
+		const candidates: string[] = [];
 
-	if (mode === 'list' && collection.fields) {
-		const listFields: string[] = [];
+		for (const field of collection.fields as any[]) {
+			if (typeof field !== 'object' || field === null) continue;
 
-		for (const field of collection.fields) {
-			if (typeof field === 'object' && field !== null) {
-				const fieldObj = field as Record<string, unknown>;
-				const fieldName =
-					(fieldObj.db_fieldName as string) ||
-					(fieldObj.name as string) ||
-					(fieldObj.label
-						? String(fieldObj.label)
-								.toLowerCase()
-								.replace(/[^a-z0-9_]/g, '_')
-						: null);
+			const name =
+				(field.db_fieldName as string | undefined) ??
+				(field.name as string | undefined) ??
+				(field.label
+					? String(field.label)
+							.toLowerCase()
+							.replace(/[^a-z0-9_]/g, '_')
+					: undefined);
 
-				if (!fieldName) continue;
+			if (!name) continue;
 
-				// Priority 1: Fields explicitly marked for list view
-				if (respectShowInList && fieldObj.showInList === true) {
-					listFields.push(fieldName);
-					continue;
-				}
-
-				// Priority 2: Title/Name fields (common display fields)
-				if (fieldName.toLowerCase().includes('title') || fieldName.toLowerCase().includes('name') || fieldName === 'slug') {
-					listFields.push(fieldName);
-					continue;
-				}
-
-				// Priority 3: Fields used for sorting (if configured)
-				if (fieldObj.sortable === true && listFields.length < maxListFields) {
-					listFields.push(fieldName);
-					continue;
-				}
-
-				// Priority 4: First few text fields for context
-				if ((fieldObj.type === 'text' || fieldObj.type === 'textarea') && listFields.length < maxListFields) {
-					listFields.push(fieldName);
-				}
+			// Priority order
+			if (respectShowInList && field.showInList === true) {
+				candidates.unshift(name); // highest priority
+			} else if (/title|name|slug/i.test(name)) {
+				candidates.push(name);
+			} else if (field.sortable === true) {
+				candidates.push(name);
+			} else if (['text', 'textarea'].includes(field.type as string)) {
+				candidates.push(name);
 			}
 		}
 
-		// Add the selected list fields (limited by maxListFields)
-		listFields.slice(0, maxListFields).forEach((field) => selectedFields.add(field));
+		// Take top candidates
+		candidates.slice(0, maxListFields).forEach((f) => selected.add(f));
 	}
 
-	const result = Array.from(selectedFields);
+	const result = Array.from(selected);
 
-	logger.debug(`[Field Selection] Mode: ${mode}, Selected: ${result.length} fields`, {
-		fields: result.join(', '),
-		collection: collection._id
+	logger.debug(`Field selection [${mode}]`, {
+		collection: collection._id,
+		count: result.length,
+		fields: result.join(', ')
 	});
 
 	return result;
 }
 
 /**
- * Converts a field name array to MongoDB projection object
- *
- * @param fields - Array of field names
- * @returns MongoDB projection object
- *
- * @example
- * createProjection(['_id', 'title', 'status'])
- * // Returns: { _id: 1, title: 1, status: 1 }
+ * MongoDB projection from field list
  */
-export function createProjection(fields: string[]): Record<string, 1> {
-	if (fields.includes('*')) {
-		return {}; // Empty object means select all fields
-	}
-
-	const projection: Record<string, 1> = {};
-	fields.forEach((field) => {
-		projection[field] = 1;
-	});
-
-	return projection;
+export function toProjection(fields: string[]): Record<string, 1> | {} {
+	return fields.includes('*') ? {} : Object.fromEntries(fields.map((f) => [f, 1]));
 }
 
 /**
- * Filters an entry object to only include specified fields
- * Useful for reducing payload size before sending to client
- *
- * @param entry - The entry object to filter
- * @param fields - Fields to keep
- * @returns Filtered entry with only specified fields
+ * Filter object to selected fields
  */
-export function filterEntryFields<T extends Record<string, unknown>>(entry: T, fields: string[]): Partial<T> {
-	if (fields.includes('*')) {
-		return entry;
-	}
-
-	const filtered: Partial<T> = {};
-
-	for (const field of fields) {
-		if (field in entry) {
-			filtered[field as keyof T] = entry[field as keyof T];
-		}
-	}
-
-	return filtered;
+export function filterFields<T extends Record<string, any>>(obj: T, fields: string[]): Partial<T> {
+	if (fields.includes('*')) return obj;
+	return Object.fromEntries(fields.filter((f) => f in obj).map((f) => [f, obj[f]])) as Partial<T>;
 }
 
 /**
- * Gets estimated payload size reduction percentage
- *
- * @param totalFields - Total number of fields in collection
- * @param selectedFields - Number of selected fields
- * @returns Estimated percentage reduction
+ * Estimate payload reduction
  */
-export function estimatePayloadReduction(totalFields: number, selectedFields: number): number {
-	if (totalFields === 0) return 0;
-	return Math.round(((totalFields - selectedFields) / totalFields) * 100);
+export function estimateReduction(total: number, selected: number): number {
+	return total ? Math.round(((total - selected) / total) * 100) : 0;
 }

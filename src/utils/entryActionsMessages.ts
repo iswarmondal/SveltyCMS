@@ -1,93 +1,66 @@
 /**
  * @file src/utils/entryActionsMessages.ts
- * @description Centralized messages for entry actions to improve localization
+ * @description Centralized, localized messages for entry actions
+ *
+ * Features:
+ * - Paraglide integration with fallbacks
+ * - Plural-aware messages
+ * - Consistent naming & structure
  */
 
 import * as m from '@src/paraglide/messages';
 
 export const entryMessages = {
-	// Status update messages
-	entriesArchived: (count: number) => m.entries_archived?.({ count }) || `${count} ${count === 1 ? 'entry' : 'entries'} archived successfully`,
+	// Bulk success
+	archived: (count: number) => m.entries_archived?.({ count }) ?? `${count} ${count === 1 ? 'entry' : 'entries'} archived`,
+	published: (count: number) => m.entries_published?.({ count }) ?? `${count} ${count === 1 ? 'entry' : 'entries'} published`,
+	unpublished: (count: number) => m.entries_unpublished?.({ count }) ?? `${count} ${count === 1 ? 'entry' : 'entries'} unpublished`,
+	tested: (count: number) => m.entries_set_to_test?.({ count }) ?? `${count} ${count === 1 ? 'entry' : 'entries'} set to test`,
+	deleted: (count: number) => m.entries_deleted?.({ count }) ?? `${count} ${count === 1 ? 'entry' : 'entries'} deleted`,
+	scheduled: (count: number) => m.entries_scheduled?.({ count }) ?? `${count} ${count === 1 ? 'entry' : 'entries'} scheduled`,
+	cloned: (count: number) => m.entries_cloned?.({ count }) ?? `${count} ${count === 1 ? 'entry' : 'entries'} cloned`,
+	updated: (count: number, status: string) =>
+		m.entries_updated?.({ count, status }) ?? `${count} ${count === 1 ? 'entry' : 'entries'} updated to ${status}`,
 
-	entriesPublished: (count: number) => m.entries_published?.({ count }) || `${count} ${count === 1 ? 'entry' : 'entries'} published successfully`,
+	// Errors
+	updateFailed: (op: string) => m.update_failed?.({ operation: op }) ?? `Failed to ${op} entries`,
+	deleteFailed: (op: string) => m.delete_failed?.({ operation: op }) ?? `Failed to ${op} entries`,
+	noSelection: () => m.no_entries_selected?.() ?? 'No entries selected',
+	noCollection: () => m.no_collection_found?.() ?? 'Collection not found',
 
-	entriesUnpublished: (count: number) =>
-		m.entries_unpublished?.({ count }) || `${count} ${count === 1 ? 'entry' : 'entries'} unpublished successfully`,
+	// Single entry
+	singleArchived: () => m.entry_archived?.() ?? 'Entry archived',
+	singleDeleted: () => m.entry_deleted_success?.() ?? 'Entry deleted',
+	singleSaved: () => m.entry_saved?.() ?? 'Entry saved',
+	statusUpdated: (status: string) => m.entry_status_updated?.({ status }) ?? `Status updated to ${status}`,
+	scheduledAt: (date: string) => m.entry_scheduled?.({ date }) ?? `Scheduled for ${date}`,
+	singleCloned: () => m.entry_cloned_success?.() ?? 'Entry cloned',
 
-	entriesSetToTest: (count: number) => m.entries_set_to_test?.({ count }) || `${count} ${count === 1 ? 'entry' : 'entries'} set to test successfully`,
-
-	entriesDeleted: (count: number) => m.entries_deleted?.({ count }) || `${count} ${count === 1 ? 'entry' : 'entries'} deleted successfully`,
-
-	entriesScheduled: (count: number) => m.entries_scheduled?.({ count }) || `${count} ${count === 1 ? 'entry' : 'entries'} scheduled successfully`,
-
-	entriesCloned: (count: number) => m.entries_cloned?.({ count }) || `${count} ${count === 1 ? 'entry' : 'entries'} cloned successfully`,
-
-	entriesUpdated: (count: number, status: string) =>
-		m.entries_updated?.({ count, status }) || `${count} ${count === 1 ? 'entry' : 'entries'} updated to ${status}`,
-
-	// Error messages
-	updateFailed: (operation: string) => m.update_failed?.({ operation }) || `Failed to ${operation} entries`,
-
-	deleteFailed: (operation: string) => m.delete_failed?.({ operation }) || `Failed to ${operation} entries`,
-
-	noEntriesSelected: () => m.no_entries_selected?.() || 'No entries selected',
-
-	noCollectionFound: () => m.no_collection_found?.() || 'Collection not found',
-
-	// Single entry messages
-	entryArchived: () => m.entry_archived?.() || 'Entry archived successfully',
-
-	entryDeleted: () => m.entry_deleted_success?.() || 'Entry deleted successfully',
-
-	entrySaved: () => m.entry_saved?.() || 'Entry saved successfully',
-
-	entryStatusUpdated: (status: string) => m.entry_status_updated?.({ status }) || `Entry status updated to ${status}`,
-
-	entryScheduled: (date: string) => m.entry_scheduled?.({ date }) || `Entry scheduled for ${date}`,
-
-	entryCloned: () => m.entry_cloned_success?.() || 'Entry cloned successfully',
-
-	// Admin permissions
-	onlyAdminsCanDelete: () => m.only_admins_can_delete?.() || 'Only administrators can delete archived entries',
-
-	statusReservedForSystem: (status: string) => m.status_reserved_for_system?.({ status }) || `${status} status is reserved for system operations`,
+	// Permissions
+	adminOnlyDelete: () => m.only_admins_can_delete?.() ?? 'Only admins can delete archived entries',
+	reservedStatus: (status: string) => m.status_reserved_for_system?.({ status }) ?? `${status} status is system-reserved`,
 
 	// Unsaved changes
-	unsavedChangesTitle: () => m.unsaved_changes_title?.() || 'Unsaved Changes',
-
-	unsavedChangesBody: () => m.unsaved_changes_body?.() || 'You have unsaved changes. Do you want to save them as a draft before leaving?',
-
-	saveAsDraftAndLeave: () => m.save_as_draft_and_leave?.() || 'Save as Draft and Leave',
-
-	stayAndContinueEditing: () => m.stay_and_continue_editing?.() || 'Stay and Continue Editing',
-
-	changesSavedAsDraft: () => m.changes_saved_as_draft?.() || 'Changes saved as draft',
-
-	errorSavingDraft: (error: string) => m.error_saving_draft?.({ error }) || `Error saving draft: ${error}`,
+	unsavedTitle: () => m.unsaved_changes_title?.() ?? 'Unsaved Changes',
+	unsavedBody: () => m.unsaved_changes_body?.() ?? 'You have unsaved changes. Save as draft before leaving?',
+	saveDraftLeave: () => m.save_as_draft_and_leave?.() ?? 'Save Draft & Leave',
+	stayEditing: () => m.stay_and_continue_editing?.() ?? 'Stay & Continue',
+	draftSaved: () => m.changes_saved_as_draft?.() ?? 'Changes saved as draft',
+	draftError: (err: string) => m.error_saving_draft?.({ error: err }) ?? `Draft save error: ${err}`,
 
 	// Scheduling
-	noEntryForScheduling: () => m.no_entry_for_scheduling?.() || 'No entry selected for scheduling',
+	noSchedulingTarget: () => m.no_entry_for_scheduling?.() ?? 'No entry selected for scheduling',
+	schedulingSuccess: () => m.entry_scheduled_status?.() ?? 'Status set to scheduled',
+	schedulingError: (err: string) => m.error_scheduling?.({ error: err }) ?? `Scheduling error: ${err}`,
 
-	entryScheduledStatus: () => m.entry_scheduled_status?.() || 'Entry status changed to scheduled',
-
-	errorScheduling: (error: string) => m.error_scheduling?.({ error }) || `Error scheduling entry: ${error}`,
-
-	// Common actions
-	confirm: () => m.button_confirm?.() || 'Confirm',
-
-	cancel: () => m.button_cancel?.() || 'Cancel',
-
-	delete: () => m.button_delete?.() || 'Delete',
-
-	archive: () => m.button_archive?.() || 'Archive',
-
-	publish: () => m.entrylist_multibutton_publish?.() || 'Publish',
-
-	unpublish: () => m.entrylist_multibutton_unpublish?.() || 'Unpublish',
-
-	schedule: () => m.entrylist_multibutton_schedule?.() || 'Schedule',
-
-	clone: () => m.entrylist_multibutton_clone?.() || 'Clone',
-
-	test: () => m.button_test?.() || 'Test'
+	// Buttons
+	confirm: () => m.button_confirm?.() ?? 'Confirm',
+	cancel: () => m.button_cancel?.() ?? 'Cancel',
+	delete: () => m.button_delete?.() ?? 'Delete',
+	archive: () => m.button_archive?.() ?? 'Archive',
+	publish: () => m.entrylist_multibutton_publish?.() ?? 'Publish',
+	unpublish: () => m.entrylist_multibutton_unpublish?.() ?? 'Unpublish',
+	schedule: () => m.entrylist_multibutton_schedule?.() ?? 'Schedule',
+	clone: () => m.entrylist_multibutton_clone?.() ?? 'Clone',
+	test: () => m.button_test?.() ?? 'Test'
 };

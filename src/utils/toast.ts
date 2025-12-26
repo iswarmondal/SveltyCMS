@@ -3,13 +3,14 @@
  * Centralized toast utility for consistent notifications across modals/components.
  */
 
-import { getToastStore, type ToastStore } from '@skeletonlabs/skeleton';
+// No longer need global store setting since we perform direct import of the singleton
+// but we keep the function to avoid breaking imports, just make it no-op
+// import { getToastStore, type ToastStore } from '@skeletonlabs/skeleton';
 import { logger } from '@utils/logger';
+import { myToastStore } from '@stores/myToastStore.svelte';
 
-let toastStoreRef: ToastStore | null = null;
-
-export function setGlobalToastStore(store?: ToastStore): void {
-	toastStoreRef = store ?? getToastStore();
+export function setGlobalToastStore(store?: any): void {
+	// No-op
 }
 
 export type ToastType = 'success' | 'info' | 'warning' | 'error';
@@ -21,22 +22,19 @@ export type ToastType = 'success' | 'info' | 'warning' | 'error';
  * @param timeout Custom timeout in milliseconds. Defaults to 3000ms.
  */
 export function showToast(message: string, type: ToastType = 'info', timeout?: number): void {
-	const backgrounds: Record<ToastType, string> = {
-		success: 'gradient-primary',
-		info: 'gradient-tertiary',
-		warning: 'gradient-warning',
-		error: 'gradient-error'
+	// Map old types to new store background types
+	const typeMap: Record<ToastType, 'success' | 'tertiary' | 'warning' | 'error'> = {
+		success: 'success',
+		info: 'tertiary',
+		warning: 'warning',
+		error: 'error'
 	};
 
-	if (!toastStoreRef) {
-		logger.warn('[toast] Toast store not initialized. Call setGlobalToastStore(getToastStore()) in a root component.');
-		return;
-	}
-
-	toastStoreRef.trigger({
+	// Use the custom store
+	myToastStore.trigger({
 		message,
-		background: backgrounds[type],
-		timeout: timeout || 3000,
-		classes: '!shadow-2xl !rounded-xl !p-4 !min-w-[320px] !max-w-[400px] !border !border-white/10 !backdrop-blur-sm'
+		background: typeMap[type] || 'primary',
+		timeout: timeout || 4000,
+		classes: 'shadow-black/30'
 	});
 }

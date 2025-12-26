@@ -25,7 +25,7 @@
 	// Stores
 	import '@stores/store.svelte';
 	import { avatarSrc } from '@stores/store.svelte';
-	import { triggerActionStore } from '@utils/globalSearchIndex';
+	import { triggerActionStore } from '@utils/globalSearchIndex.svelte';
 	// Components
 	import PageTitle from '@components/PageTitle.svelte';
 	import PermissionGuard from '@components/PermissionGuard.svelte';

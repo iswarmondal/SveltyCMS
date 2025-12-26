@@ -1,139 +1,117 @@
 /**
  * @file src/routes/api/widgets/list/+server.ts
- * @description API endpoint for listing all widgets with 3-pillar architecture metadata
+ * @description API endpoint for listing all widgets with 3-pillar metadata
+ *
+ * Features:
+ * - Tenant-aware widget initialization
+ * - Permission check (api:widgets)
+ * - Active status from database
+ * - Core/custom distinction
+ * - 3-pillar architecture metadata
+ * - Performance timing & summary stats
  */
 
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+
 import { logger } from '@utils/logger.server';
 import { hasPermissionWithRoles } from '@src/databases/auth/permissions';
 
-import {
-	widgetStoreActions,
-	widgetFunctions as widgetFunctionsStore,
-	coreWidgets as coreWidgetsStore,
-	getWidgetDependencies
-} from '@stores/widgetStore.svelte';
+import { widgetStoreActions, widgetFunctions, coreWidgets, getWidgetDependencies } from '@stores/widgetStore.svelte';
 
 export const GET: RequestHandler = async ({ url, locals }) => {
 	const start = performance.now();
 
 	try {
-		const { user } = locals;
+		const { user, roles = [], dbAdapter, tenantId: contextTenantId } = locals;
 
-		if (!user) {
-			throw error(401, 'Unauthorized');
+		if (!user) throw error(401, 'Unauthorized');
+		if (!dbAdapter?.widgets?.getActiveWidgets) throw error(500, 'Widget adapter unavailable');
+
+		// Permission check
+		if (!hasPermissionWithRoles(user, 'api:widgets', roles)) {
+			logger.warn(`User ${user._id} denied widget list access`);
+			throw error(403, 'Forbidden');
 		}
 
-		// Check permission
-		const hasWidgetPermission = hasPermissionWithRoles(user, 'api:widgets', locals.roles);
-		if (!hasWidgetPermission) {
-			logger.warn(`User ${user._id} denied access to widget API due to insufficient permissions`);
-			throw error(403, 'Insufficient permissions');
-		}
+		// Tenant resolution
+		const tenantId = url.searchParams.get('tenantId') ?? contextTenantId ?? 'default';
 
-		const tenantId = url.searchParams.get('tenantId') || 'default-tenant';
-
-		// Initialize widgets if not already loaded
+		// Ensure widgets loaded
 		await widgetStoreActions.initializeWidgets(tenantId);
 
-		// Get active widgets from DATABASE (not cached widget store)
-		// This ensures the GUI always shows current database state
-		if (!locals.dbAdapter?.widgets?.getActiveWidgets) {
-			throw error(500, 'Widget database adapter not available');
-		}
+		// Active widgets from DB
+		const activeRes = await dbAdapter.widgets.getActiveWidgets();
+		if (!activeRes.success) throw error(500, activeRes.error?.message ?? 'DB error');
+		const activeNames = (activeRes.data ?? []).map((w: any) => w.name);
 
-		const activeWidgetsResult = await locals.dbAdapter.widgets.getActiveWidgets();
-		if (!activeWidgetsResult.success) {
-			throw error(500, `Failed to fetch active widgets: ${activeWidgetsResult.error?.message || 'Unknown error'}`);
-		}
+		// Build enriched widget list
+		const widgets = Object.entries(widgetFunctions)
+			.map(([name, fn]) => {
+				const isCore = coreWidgets.includes(name);
+				const isActive = activeNames.includes(name);
+				const deps = getWidgetDependencies(name);
 
-		const activeWidgetNames = (activeWidgetsResult.data || []).map((w) => w.name);
-
-		logger.debug('[/api/widgets/list] Active widgets from database', {
-			tenantId,
-			count: activeWidgetNames.length,
-			widgets: activeWidgetNames
-		});
-
-		// Get all widget functions and their metadata from widget store
-		let allWidgetFunctions: Record<string, unknown> = {};
-		let coreWidgetNames: string[] = [];
-
-		widgetFunctionsStore.subscribe(($widgetFunctions) => {
-			allWidgetFunctions = $widgetFunctions;
-		})();
-
-		coreWidgetsStore.subscribe(($coreWidgets) => {
-			coreWidgetNames = $coreWidgets;
-		})();
-
-		// Build comprehensive widget list with 3-pillar architecture metadata
-		const widgetList = Object.entries(allWidgetFunctions).map(([name, widgetFn]) => {
-			const isActive = activeWidgetNames.includes(name);
-			const isCore = coreWidgetNames.includes(name);
-			const dependencies = getWidgetDependencies(name);
-			const widget = widgetFn as Record<string, unknown>;
-
-			return {
-				name,
-				icon: (widget.Icon as string) || (isCore ? 'mdi:puzzle' : 'mdi:puzzle-plus'),
-				description: (widget.Description as string) || '',
-				isCore,
-				isActive,
-				dependencies,
-				// 3-Pillar Architecture Components
-				pillar: {
-					definition: {
-						name: widget.Name as string,
-						description: widget.Description as string,
-						icon: widget.Icon as string,
-						guiSchema: widget.GuiSchema ? Object.keys(widget.GuiSchema as object).length : 0,
-						aggregations: !!widget.aggregations
+				const f = fn as any;
+				return {
+					name,
+					icon: f.Icon ?? (isCore ? 'mdi:puzzle' : 'mdi:puzzle-plus'),
+					description: f.Description ?? '',
+					isCore,
+					isActive,
+					dependencies: deps,
+					pillar: {
+						definition: {
+							name: f.Name ?? name,
+							description: f.Description ?? '',
+							icon: f.Icon ?? '',
+							guiSchemaFields: f.GuiSchema ? Object.keys(f.GuiSchema).length : 0,
+							hasAggregations: !!f.aggregations
+						},
+						input: {
+							componentPath: f.__inputComponentPath ?? '',
+							exists: !!f.__inputComponentPath
+						},
+						display: {
+							componentPath: f.__displayComponentPath ?? '',
+							exists: !!f.__displayComponentPath
+						}
 					},
-					input: {
-						componentPath: (widget.__inputComponentPath as string) || '',
-						exists: !!(widget.__inputComponentPath as string)
-					},
-					display: {
-						componentPath: (widget.__displayComponentPath as string) || '',
-						exists: !!(widget.__displayComponentPath as string)
-					}
-				},
-				// Widget metadata
-				canDisable: !isCore && dependencies.length === 0,
-				hasValidation: !!widget.GuiSchema
-			};
-		}); // Sort: core first, then alphabetically
-		widgetList.sort((a, b) => {
-			if (a.isCore && !b.isCore) return -1;
-			if (!a.isCore && b.isCore) return 1;
-			return a.name.localeCompare(b.name);
-		});
+					canDisable: !isCore && deps.length === 0,
+					hasValidation: !!f.GuiSchema
+				};
+			})
+			.sort((a, b) => {
+				if (a.isCore && !b.isCore) return -1;
+				if (!a.isCore && b.isCore) return 1;
+				return a.name.localeCompare(b.name);
+			});
 
 		const duration = performance.now() - start;
 
-		logger.trace('Retrieved complete widget list', {
+		logger.debug('Widget list generated', {
 			tenantId,
-			coreWidgets: widgetList.filter((w) => w.isCore).length,
-			customWidgets: widgetList.filter((w) => !w.isCore).length,
-			totalWidgets: widgetList.length
+			total: widgets.length,
+			core: widgets.filter((w) => w.isCore).length,
+			active: widgets.filter((w) => w.isActive).length,
+			duration: `${duration.toFixed(2)}ms`
 		});
+
 		return json({
-			widgets: widgetList,
+			widgets,
 			summary: {
-				total: widgetList.length,
-				active: widgetList.filter((w) => w.isActive).length,
-				core: widgetList.filter((w) => w.isCore).length,
-				custom: widgetList.filter((w) => !w.isCore).length
+				total: widgets.length,
+				core: widgets.filter((w) => w.isCore).length,
+				custom: widgets.filter((w) => !w.isCore).length,
+				active: widgets.filter((w) => w.isActive).length
 			},
 			tenantId,
 			performance: { duration: `${duration.toFixed(2)}ms` }
 		});
 	} catch (err) {
 		const duration = performance.now() - start;
-		const message = `Failed to get widget list: ${err instanceof Error ? err.message : String(err)}`;
-		logger.error(message, { duration: `${duration.toFixed(2)}ms` });
-		throw error(500, message);
+		const msg = err instanceof Error ? err.message : String(err);
+		logger.error('Widget list fetch failed', { error: msg, duration: `${duration.toFixed(2)}ms` });
+		throw error(500, 'Failed to retrieve widget list');
 	}
 };

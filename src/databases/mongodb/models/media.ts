@@ -11,7 +11,7 @@ import type { Model } from 'mongoose';
 import type { MediaItem, DatabaseResult, IDBAdapter } from '@src/databases/dbInterface';
 import type { DatabaseId } from '@src/content/types';
 import { generateId } from '@src/databases/mongodb/methods/mongoDBUtils';
-import { nowISODateString, toISOString } from '@utils/dateUtils';
+import { nowISODateString, toISO as toISOString } from '@utils/dateUtils';
 
 // System Logger
 import { logger } from '@utils/logger';

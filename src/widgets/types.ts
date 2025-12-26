@@ -1,21 +1,35 @@
 /**
  * @file src/widgets/types.ts
- * @description Improved widget types aligned with factory pattern
+ * @description Type definitions for widget system (3-pillar architecture, factory pattern)
  *
- * Key improvements:
- * - Better alignment with createWidget factory
- * - Stronger type safety with generics
- * - Clearer separation of concerns
- * - Support for 3-pillar architecture
+ * Key features:
+ * - Strong typing with generics for widget props
+ * - Clear separation: definition, factory, runtime
+ * - Support for input/display components (3-pillar)
+ * - Type guards for runtime checks
  */
 
-import type { SvelteComponent } from 'svelte';
-import type { FieldInstance, Schema } from '../content/types';
+import type { FieldInstance, Schema } from '@src/content/types';
 import type { User } from '@src/databases/auth/types';
 import type { GuiFieldConfig } from '@utils/utils';
 
+export interface WidgetFunction {
+	(field: any): any;
+	Name?: string;
+	Icon?: string;
+	Description?: string;
+	GuiSchema?: Record<string, unknown>;
+	GraphqlSchema?: WidgetDefinition['GraphqlSchema'];
+	aggregations?: WidgetDefinition['aggregations'];
+	__inputComponentPath?: string;
+	__displayComponentPath?: string;
+	__widgetType?: WidgetType;
+	__dependencies?: string[];
+	componentPath?: string;
+}
+
 // ============================================================================
-// Widget Type Classification
+// Widget Classification
 // ============================================================================
 
 export type WidgetType = 'core' | 'custom' | 'marketplace';
@@ -29,69 +43,57 @@ export interface WidgetMetadata {
 }
 
 // ============================================================================
-// Widget Definition (The Blueprint)
+// Widget Definition (Immutable blueprint)
 // ============================================================================
 
-/**
- * The immutable definition of a widget - created once by the factory
- * This is what gets stored in the widget registry
- */
 export interface WidgetDefinition<TProps extends Record<string, unknown> = Record<string, unknown>> {
-	// Core identity
+	/** Unique identifier */
 	widgetId: string;
+	/** Display name */
 	Name: string;
 	Icon?: string;
 	Description?: string;
 
-	// 3-Pillar Architecture paths
+	// 3-Pillar paths
 	inputComponentPath?: string;
 	displayComponentPath?: string;
 
-	// Validation (can be static schema or function)
+	// Validation
 	validationSchema: unknown | ((field: FieldInstance) => unknown);
 
-	/** Optional function to return widget-specific translatable paths. */
+	// Translation support
 	getTranslatablePaths?: (basePath: string) => string[];
 
-	// Default values for widget-specific props
+	// Defaults for widget-specific props
 	defaults?: Partial<TProps>;
 
-	// Configuration UI in Collection Builder
+	// Builder UI schema
 	GuiFields?: Record<string, unknown>;
 
-	// Generic translation support
-	// getTranslatablePaths is already defined above in WidgetDefinition interface
-	// Removing duplicate definition
-
-	// Optional advanced features
-	GraphqlSchema?: (params: { field: unknown; label: string; collection: unknown; collectionNameMapping?: Map<string, string> }) => {
+	// GraphQL integration
+	GraphqlSchema?: (params: { field: FieldInstance; label: string; collection: Schema; collectionNameMapping?: Map<string, string> }) => {
 		typeID: string | null;
 		graphql: string;
 		resolver?: Record<string, unknown>;
 	};
 
+	// Aggregations (filters/sorts)
 	aggregations?: {
 		filters?: (params: { field: FieldInstance; filter: string; contentLanguage: string }) => Promise<unknown[]>;
 		sorts?: (params: { field: FieldInstance; sortDirection: number; contentLanguage: string }) => Promise<Record<string, number>>;
 	};
 
-	// Metadata
 	metadata?: WidgetMetadata;
 }
 
 // ============================================================================
-// Widget Factory Function (What createWidget returns)
+// Widget Factory (Callable creator)
 // ============================================================================
 
-/**
- * The factory function that creates field instances
- * This is what collection authors use in their schemas
- */
 export interface WidgetFactory<TProps extends Record<string, unknown> = Record<string, unknown>> {
-	// The callable function that creates field instances
 	(config: FieldConfig<TProps>): FieldInstance;
 
-	// Static properties attached to the function (for compatibility)
+	// Attached metadata (function properties)
 	Name: string;
 	Icon?: string;
 	Description?: string;
@@ -102,21 +104,16 @@ export interface WidgetFactory<TProps extends Record<string, unknown> = Record<s
 	__displayComponentPath?: string;
 	__widgetType?: WidgetType;
 	__dependencies?: string[];
+	componentPath?: string;
 
-	// String representation
 	toString(): string;
 }
 
 // ============================================================================
-// Field Configuration (What collection authors provide)
+// Field Configuration
 // ============================================================================
 
-/**
- * Configuration for creating a field instance
- * Combines standard field properties with widget-specific props
- */
 export type FieldConfig<TProps extends Record<string, unknown> = Record<string, unknown>> = {
-	// Standard field properties
 	label: string;
 	db_fieldName?: string;
 	required?: boolean;
@@ -126,84 +123,27 @@ export type FieldConfig<TProps extends Record<string, unknown> = Record<string, 
 	icon?: string;
 	disabled?: boolean;
 	readonly?: boolean;
-
-	// Permissions
 	permissions?: Record<string, Record<string, boolean>>;
-} & Partial<TProps>; // Widget-specific props
+} & Partial<TProps>;
 
 // ============================================================================
-// Legacy Compatibility Types (for gradual migration)
+// Runtime Parameters
 // ============================================================================
 
-/**
- * @deprecated Use WidgetFactory instead
- * Legacy widget function type for backward compatibility
- */
-export interface Widget {
-	(field: FieldInstance): FieldInstance;
-	Name: string;
-	Icon?: string;
-	Description?: string;
-	GuiSchema?: SvelteComponent;
-	GraphqlSchema?: unknown;
-	aggregations?: unknown;
-	__widgetType?: WidgetType;
-	__dependencies?: string[];
-	__inputComponentPath?: string;
-	__displayComponentPath?: string;
-	componentPath?: string;
-}
-
-/**
- * @deprecated Use WidgetFactory instead
- * Legacy widget function type
- */
-export interface WidgetFunction {
-	(config: Record<string, unknown>): Widget;
-	__widgetId?: string;
-	Name: string;
-	GuiSchema?: typeof SvelteComponent | Record<string, unknown>;
-	GraphqlSchema?: unknown;
-	Icon?: string;
-	Description?: string;
-	aggregations?: unknown;
-	__widgetType?: WidgetType;
-	__isCore?: boolean;
-	__dependencies?: string[];
-	__inputComponentPath?: string;
-	__displayComponentPath?: string;
-	componentPath?: string;
-}
-
-// ============================================================================
-// Widget Module (for dynamic imports)
-// ============================================================================
-
-export type WidgetModule = {
-	default: WidgetFactory;
-};
-
-// ============================================================================
-// Widget Runtime Parameters
-// ============================================================================
-
-/**
- * Parameters passed to widget components at runtime
- */
-export type WidgetParam = {
+export interface WidgetRuntimeParams {
 	field: FieldInstance;
 	schema: Schema;
 	user: User;
 	value: unknown;
-	values: unknown;
+	values: Record<string, unknown>;
 	onValueChange: (value: unknown) => void;
 	config: GuiFieldConfig;
-	placeholder: WidgetPlaceholder;
-};
+}
 
-// ============================================================================
-// Widget Placeholder (for lazy loading)
-// ============================================================================
+// Placeholder for lazy loading
+export interface WidgetModule {
+	default: WidgetFactory | WidgetDefinition;
+}
 
 export interface WidgetPlaceholder {
 	__widgetId: string;
@@ -212,12 +152,9 @@ export interface WidgetPlaceholder {
 }
 
 // ============================================================================
-// Widget Registry Types
+// Registry
 // ============================================================================
 
-/**
- * Widget registry entry combining definition and runtime info
- */
 export interface WidgetRegistryEntry {
 	definition: WidgetDefinition;
 	factory: WidgetFactory;
@@ -227,27 +164,13 @@ export interface WidgetRegistryEntry {
 	error?: string;
 }
 
-/**
- * Widget registry for managing all widgets
- */
 export interface WidgetRegistry {
-	// Get a widget factory by ID
-	get(widgetId: string): WidgetFactory | undefined;
-
-	// Register a new widget
-	register(widgetId: string, entry: WidgetRegistryEntry): void;
-
-	// Unregister a widget
-	unregister(widgetId: string): void;
-
-	// List all widget IDs
+	get(id: string): WidgetFactory | undefined;
+	register(id: string, entry: WidgetRegistryEntry): void;
+	unregister(id: string): void;
 	list(): string[];
-
-	// Get widgets by type
 	getByType(type: WidgetType): WidgetRegistryEntry[];
-
-	// Check if a widget is registered
-	has(widgetId: string): boolean;
+	has(id: string): boolean;
 }
 
 // ============================================================================
@@ -255,7 +178,7 @@ export interface WidgetRegistry {
 // ============================================================================
 
 export function isWidgetFactory(value: unknown): value is WidgetFactory {
-	return typeof value === 'function' && 'Name' in value && typeof (value as WidgetFactory).Name === 'string';
+	return typeof value === 'function' && 'Name' in value && typeof (value as any).Name === 'string';
 }
 
 export function isWidgetDefinition(value: unknown): value is WidgetDefinition {

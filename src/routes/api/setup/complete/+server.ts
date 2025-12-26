@@ -27,9 +27,7 @@ import type { RequestHandler } from './$types';
 
 // Collection utilities
 import type { Locale } from '@src/paraglide/runtime';
-import { publicEnv } from '@src/stores/globalSettings.svelte';
-import { systemLanguage } from '@stores/store.svelte';
-import { get } from 'svelte/store';
+import { loadSettingsCache } from '@src/services/settingsService';
 
 interface AdminConfig {
 	username: string;
@@ -418,9 +416,11 @@ export const POST: RequestHandler = async ({ request, cookies, url }) => {
 		if (!skipWelcomeEmail) {
 			try {
 				const hostLink = url.origin; // Get the full origin (protocol + host)
-				const langFromStore = get(systemLanguage);
-				const supportedLocales = (publicEnv.LOCALES || [publicEnv.BASE_LOCALE]) as Locale[];
-				const userLanguage = langFromStore && supportedLocales.includes(langFromStore) ? langFromStore : (publicEnv.BASE_LOCALE as Locale) || 'en';
+				const settingsCache = await loadSettingsCache();
+				const baseLocale = settingsCache.public.BASE_LOCALE || 'en';
+				const configuredLocales = settingsCache.public.LOCALES || [baseLocale];
+				const langFromCookie = (cookies.get('systemLanguage') || cookies.get('contentLanguage')) as Locale | null;
+				const userLanguage = (langFromCookie && (configuredLocales as Locale[]).includes(langFromCookie) ? langFromCookie : baseLocale) as Locale;
 
 				const emailResponse = await fetch(`${url.origin}/api/sendMail`, {
 					method: 'POST',
@@ -430,11 +430,11 @@ export const POST: RequestHandler = async ({ request, cookies, url }) => {
 					},
 					body: JSON.stringify({
 						recipientEmail: admin.email,
-						subject: `Welcome to ${publicEnv.SITE_NAME || 'SveltyCMS'}`,
+						subject: `Welcome to ${settingsCache.public.SITE_NAME || 'SveltyCMS'}`,
 						templateName: 'welcomeUser',
 						props: {
 							username: admin.username,
-							sitename: publicEnv.SITE_NAME || 'SveltyCMS',
+							sitename: settingsCache.public.SITE_NAME || 'SveltyCMS',
 							hostLink: hostLink
 						},
 						languageTag: userLanguage
@@ -496,9 +496,11 @@ export const POST: RequestHandler = async ({ request, cookies, url }) => {
 		// 7. Determine redirect path - PREFER PATH over UUID for clean URLs
 		let redirectPath: string;
 		try {
-			const langFromStore = get(systemLanguage);
-			const supportedLocales = (publicEnv.LOCALES || [publicEnv.BASE_LOCALE]) as Locale[];
-			const userLanguage = langFromStore && supportedLocales.includes(langFromStore) ? langFromStore : (publicEnv.BASE_LOCALE as Locale) || 'en';
+			const settingsCache = await loadSettingsCache();
+			const baseLocale = settingsCache.public.BASE_LOCALE || 'en';
+			const configuredLocales = settingsCache.public.LOCALES || [baseLocale];
+			const langFromCookie = (cookies.get('systemLanguage') || cookies.get('contentLanguage')) as Locale | null;
+			const userLanguage = (langFromCookie && (configuredLocales as Locale[]).includes(langFromCookie) ? langFromCookie : baseLocale) as Locale;
 
 			// ✅ PRIORITY 1: Use path from firstCollection (clean URL)
 			if (firstCollection?.path) {

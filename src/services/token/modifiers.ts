@@ -98,7 +98,7 @@ const functions: Record<string, ModifierFunction> = {
 		}
 
 		const actualFormat = presets[format] || format;
-		return formatDateString(v as string | Date, actualFormat, '');
+		return formatDateString(v as string | Date, actualFormat as any, '');
 	},
 
 	// ===== PATH MODIFIERS =====

@@ -5,7 +5,6 @@
 
 import type { Locale } from '@src/paraglide/runtime';
 import { publicEnv } from '@src/stores/globalSettings.svelte';
-import { SvelteSet } from 'svelte/reactivity';
 
 // --- Helper Functions & Interfaces ---
 
@@ -95,7 +94,7 @@ function getCookie(name: string): string | null {
 	return null;
 }
 
-// --- Rune-based Stores ---
+// --- App Store (Rune-based Global State) ---
 
 // Initialize translationProgress with a guaranteed structure
 const initialTranslationProgress: TranslationProgress = { show: false };
@@ -117,217 +116,6 @@ for (const lang of availableLanguages) {
 	};
 }
 
-// Internal state - not exported directly
-const _translationProgress = $state<TranslationProgress>(initialTranslationProgress);
-let _tabSetState = $state<number>(0);
-let _drawerExpandedState = $state<boolean>(true);
-let _listboxValueState = $state<string>('create');
-let _avatarSrc = $state('/Default_User.svg');
-const _translationStatus = $state({});
-let _completionStatus = $state(0);
-let _translationStatusOpen = $state(false);
-
-// Export getter functions for the runes
-export function getTranslationProgress() {
-	return _translationProgress;
-}
-
-export function getTabSetState() {
-	return _tabSetState;
-}
-
-export function getDrawerExpandedState() {
-	return _drawerExpandedState;
-}
-
-export function getListboxValueState() {
-	return _listboxValueState;
-}
-
-export function getAvatarSrc() {
-	return _avatarSrc;
-}
-
-export function getTranslationStatus() {
-	return _translationStatus;
-}
-
-export function getCompletionStatus() {
-	return _completionStatus;
-}
-
-export function getTranslationStatusOpen() {
-	return _translationStatusOpen;
-}
-
-// Export store-like objects for backward compatibility
-export const translationProgress = {
-	get value() {
-		return _translationProgress;
-	},
-	set value(newValue: TranslationProgress) {
-		Object.assign(_translationProgress, newValue);
-	}
-};
-
-export const tabSetState = {
-	get value() {
-		return _tabSetState;
-	},
-	set value(newValue: number) {
-		_tabSetState = newValue;
-	}
-};
-
-export const drawerExpandedState = {
-	get value() {
-		return _drawerExpandedState;
-	},
-	set value(newValue: boolean) {
-		_drawerExpandedState = newValue;
-	}
-};
-
-export const listboxValueState = {
-	get value() {
-		return _listboxValueState;
-	},
-	set value(newValue: string) {
-		_listboxValueState = newValue;
-	}
-};
-
-export const avatarSrc = {
-	get value() {
-		return _avatarSrc;
-	},
-	set value(newValue: string) {
-		// Normalize avatar URL so it consistently uses the /files route in prod builds
-		try {
-			_avatarSrc = normalizeAvatarUrl(newValue);
-		} catch (error) {
-			console.error('[Store] Avatar normalization failed:', error);
-			_avatarSrc = '/Default_User.svg';
-		}
-	}
-};
-
-// Additional store-like objects for other runes
-export const translationStatusStore = {
-	get value() {
-		return _translationStatus;
-	},
-	set value(newValue: Record<string, unknown>) {
-		Object.assign(_translationStatus, newValue);
-	}
-};
-
-export const completionStatusStore = {
-	get value() {
-		return _completionStatus;
-	},
-	set value(newValue: number) {
-		_completionStatus = newValue;
-	}
-};
-
-export const translationStatusOpenStore = {
-	get value() {
-		return _translationStatusOpen;
-	},
-	set value(newValue: boolean) {
-		_translationStatusOpen = newValue;
-	}
-};
-
-// Function-style exports for backward compatibility with old usage
-export const translationStatus = () => _translationStatus;
-export const completionStatus = () => _completionStatus;
-export const translationStatusOpen = () => _translationStatusOpen;
-
-// Export helper functions for backward compatibility
-export function setTranslationStatusOpen(value: boolean) {
-	_translationStatusOpen = value;
-}
-
-export function updateTranslationStatus(value: Record<string, unknown>) {
-	Object.assign(_translationStatus, value);
-}
-
-export function updateCompletionStatus(value: number) {
-	_completionStatus = value;
-}
-
-export function updateTranslationStatusOpen(value: boolean) {
-	_translationStatusOpen = value;
-}
-
-// --- Small helper: rune-backed store that also behaves like a Svelte store ---
-function createRuneBackedStore<T>(initial: T) {
-	let state = $state<T>(initial);
-	const subscribers = new SvelteSet<(v: T) => void>();
-	const notify = () => {
-		for (const fn of subscribers) {
-			try {
-				fn(state);
-			} catch {
-				// noop: subscriber errors shouldn't break notifications
-			}
-		}
-	};
-	return {
-		// Rune-style value access
-		get value() {
-			return state;
-		},
-		set value(v: T) {
-			state = v;
-			notify();
-		},
-		// Svelte store API for backward compatibility
-		set(v: T) {
-			state = v;
-			notify();
-		},
-		update(fn: (v: T) => T) {
-			state = fn(state);
-			notify();
-		},
-		subscribe(run: (v: T) => void) {
-			subscribers.add(run);
-			try {
-				run(state);
-			} catch {
-				// noop on initial call
-			}
-			return () => {
-				subscribers.delete(run);
-			};
-		}
-	} as const;
-}
-
-// --- Legacy Svelte 3/4 Stores (for compatibility) ---
-
-/**
- * Language Management with ParaglideJS Integration
- *
- * Architecture:
- * - systemLanguage store: UI state management (read/write interface for components)
- * - ParaglideJS: Reads from `systemLanguage` cookie, provides translations via getLocale()
- *
- * Flow:
- * 1. Component calls: systemLanguage.set('de')
- * 2. Store automatically sets cookie: systemLanguage=de
- * 3. ParaglideJS reads cookie and updates translations
- * 4. Components read via: getLocale() or systemLanguage.value
- *
- * Why not use ParaglideJS directly?
- * - ParaglideJS doesn't provide a client-side API to change language
- * - It relies on cookies/URL routing for language detection
- * - Our store provides the reactive bridge between UI and ParaglideJS
- */
-
 // Get initial values from cookies or use defaults (with error handling for server-side)
 let initialSystemLanguage: Locale;
 let initialContentLanguage: Locale;
@@ -341,275 +129,257 @@ try {
 	initialContentLanguage = 'en' as Locale;
 }
 
-// Create reactive state for languages with cookie syncing
-let _systemLanguage = $state<Locale>(initialSystemLanguage);
-let _contentLanguage = $state<Locale>(initialContentLanguage);
+export class AppStore {
+	// Core State
+	translationProgress = $state<TranslationProgress>(initialTranslationProgress);
+	tabSetState = $state<number>(0);
+	drawerExpandedState = $state<boolean>(true);
+	listboxValueState = $state<string>('create');
+	avatarSrc = $state('/Default_User.svg');
+	translationStatus = $state<Record<string, unknown>>({});
+	completionStatus = $state(0);
+	translationStatusOpen = $state(false);
 
-// Subscriber sets for manual subscription tracking (server-safe)
-const systemLanguageSubscribers = new SvelteSet<(value: Locale) => void>();
-const contentLanguageSubscribers = new SvelteSet<(value: Locale) => void>();
+	// Context / Config (Side Effects via Getters/Setters)
+	_systemLanguage = $state<Locale>(initialSystemLanguage);
+	_contentLanguage = $state<Locale>(initialContentLanguage);
 
-// Notify all subscribers
-function notifySystemLanguage() {
-	for (const fn of systemLanguageSubscribers) {
+	// UI State
+	headerActionButton = $state<ConstructorOfATypedSvelteComponent | string | undefined>(undefined);
+	headerActionButton2 = $state<ConstructorOfATypedSvelteComponent | string | undefined>(undefined);
+	pkgBgColor = $state('variant-filled-primary');
+	file = $state<File | null>(null);
+	saveEditedImage = $state(false);
+	saveFunction = $state<SaveFunction>({
+		fn: () => {},
+		reset: () => {}
+	});
+	validationErrors = $state<ValidationErrors>({});
+
+	// Other Stores
+	saveLayerStore = $state<() => Promise<void>>(async () => {});
+	shouldShowNextButton = $state(false);
+
+	// Implement Getters/Setters for logic
+	get systemLanguage() {
+		return this._systemLanguage;
+	}
+	set systemLanguage(v: Locale) {
+		this._systemLanguage = v;
+		if (typeof document !== 'undefined' && v) {
+			document.cookie = `systemLanguage=${v}; path=/; max-age=${60 * 60 * 24 * 365}; SameSite=Lax${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`;
+		}
+	}
+
+	get contentLanguage() {
+		return this._contentLanguage;
+	}
+	set contentLanguage(v: Locale) {
+		this._contentLanguage = v;
+		if (typeof document !== 'undefined' && v) {
+			document.cookie = `contentLanguage=${v}; path=/; max-age=${60 * 60 * 24 * 365}; SameSite=Lax${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`;
+		}
+	}
+
+	setAvatarSrc(v: string) {
 		try {
-			fn(_systemLanguage);
-		} catch {
-			// noop: subscriber errors shouldn't break notifications
+			this.avatarSrc = normalizeAvatarUrl(v);
+		} catch (error) {
+			console.error('[Store] Avatar normalization failed:', error);
+			this.avatarSrc = '/Default_User.svg';
 		}
 	}
 }
 
-function notifyContentLanguage() {
-	for (const fn of contentLanguageSubscribers) {
-		try {
-			fn(_contentLanguage);
-		} catch {
-			// noop: subscriber errors shouldn't break notifications
-		}
-	}
+export const appStore = new AppStore();
+
+// --- Export Getters (Backward Compat) ---
+
+export function getTranslationProgress() {
+	return appStore.translationProgress;
+}
+export function getTabSetState() {
+	return appStore.tabSetState;
+}
+export function getDrawerExpandedState() {
+	return appStore.drawerExpandedState;
+}
+export function getListboxValueState() {
+	return appStore.listboxValueState;
+}
+export function getAvatarSrc() {
+	return appStore.avatarSrc;
+}
+export function getTranslationStatus() {
+	return appStore.translationStatus;
+}
+export function getCompletionStatus() {
+	return appStore.completionStatus;
+}
+export function getTranslationStatusOpen() {
+	return appStore.translationStatusOpen;
 }
 
-// Language stores with Svelte store API compatibility (server-safe)
-export const systemLanguage = {
-	get value() {
-		return _systemLanguage;
-	},
-	set value(newValue: Locale) {
-		_systemLanguage = newValue;
-		if (typeof document !== 'undefined' && newValue) {
-			document.cookie = `systemLanguage=${newValue}; path=/; max-age=${60 * 60 * 24 * 365}; SameSite=Lax${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`;
-		}
-		notifySystemLanguage();
-	},
-	set(newValue: Locale) {
-		this.value = newValue;
-	},
-	update(fn: (value: Locale) => Locale) {
-		this.value = fn(this.value);
-	},
-	subscribe(run: (value: Locale) => void) {
-		systemLanguageSubscribers.add(run);
-		// Run immediately with current value (Svelte store convention)
-		try {
-			run(_systemLanguage);
-		} catch {
-			// noop on initial call
-		}
-		return () => {
-			systemLanguageSubscribers.delete(run);
-		};
-	}
-};
+// Function-style exports for backward compatibility
+export const translationStatus = () => appStore.translationStatus;
+export const completionStatus = () => appStore.completionStatus;
+export const translationStatusOpen = () => appStore.translationStatusOpen;
 
-export const contentLanguage = {
-	get value() {
-		return _contentLanguage;
-	},
-	set value(newValue: Locale) {
-		_contentLanguage = newValue;
-		if (typeof document !== 'undefined' && newValue) {
-			document.cookie = `contentLanguage=${newValue}; path=/; max-age=${60 * 60 * 24 * 365}; SameSite=Lax${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`;
-		}
-		notifyContentLanguage();
-	},
-	set(newValue: Locale) {
-		this.value = newValue;
-	},
-	update(fn: (value: Locale) => Locale) {
-		this.value = fn(this.value);
-	},
-	subscribe(run: (value: Locale) => void) {
-		contentLanguageSubscribers.add(run);
-		// Run immediately with current value (Svelte store convention)
-		try {
-			run(_contentLanguage);
-		} catch {
-			// noop on initial call
-		}
-		return () => {
-			contentLanguageSubscribers.delete(run);
-		};
-	}
-};
+// Export helper functions for backward compatibility
+export function setTranslationStatusOpen(value: boolean) {
+	appStore.translationStatusOpen = value;
+}
+export function updateTranslationStatus(value: Record<string, unknown>) {
+	Object.assign(appStore.translationStatus, value);
+}
+export function updateCompletionStatus(value: number) {
+	appStore.completionStatus = value;
+}
+export function updateTranslationStatusOpen(value: boolean) {
+	appStore.translationStatusOpen = value;
+}
 
-// Simple reactive state for other stores
-let _headerActionButton = $state<ConstructorOfATypedSvelteComponent | string | undefined>(undefined);
-let _headerActionButton2 = $state<ConstructorOfATypedSvelteComponent | string | undefined>(undefined);
-let _pkgBgColor = $state('variant-filled-primary');
-let _file = $state<File | null>(null);
-let _saveEditedImage = $state(false);
-let _saveFunction = $state<SaveFunction>({
-	fn: () => {},
-	reset: () => {}
-});
-let _validationErrors = $state<ValidationErrors>({});
+// --- Export Proxies (Legacy Support) ---
 
-// Subscriber sets for manual subscription tracking
-const headerActionButtonSubscribers = new SvelteSet<(value: ConstructorOfATypedSvelteComponent | string | undefined) => void>();
-const headerActionButton2Subscribers = new SvelteSet<(value: ConstructorOfATypedSvelteComponent | string | undefined) => void>();
-const pkgBgColorSubscribers = new SvelteSet<(value: string) => void>();
-const fileSubscribers = new SvelteSet<(value: File | null) => void>();
-const saveEditedImageSubscribers = new SvelteSet<(value: boolean) => void>();
-const saveFunctionSubscribers = new SvelteSet<(value: SaveFunction) => void>();
-const validationErrorsSubscribers = new SvelteSet<(value: ValidationErrors) => void>();
-
-// Helper to create simple store wrappers
-function createSimpleStore<T>(getter: () => T, setter: (value: T) => void, subscribers: SvelteSet<(value: T) => void>) {
-	const notify = () => {
-		const currentValue = getter();
-		for (const fn of subscribers) {
-			try {
-				fn(currentValue);
-			} catch {
-				// noop
-			}
-		}
-	};
-
+// Helper for store-like proxy
+function createProxy<T>(getter: () => T, setter: (v: T) => void) {
 	return {
 		get value() {
 			return getter();
 		},
-		set value(newValue: T) {
-			setter(newValue);
-			notify();
+		set value(v: T) {
+			setter(v);
 		},
-		set(newValue: T) {
-			this.value = newValue;
+		set(v: T) {
+			setter(v);
 		},
-		update(fn: (value: T) => T) {
-			this.value = fn(this.value);
+		update(fn: (v: T) => T) {
+			setter(fn(getter()));
 		},
-		subscribe(run: (value: T) => void) {
-			subscribers.add(run);
-			try {
-				run(getter());
-			} catch {
-				// noop
-			}
-			return () => {
-				subscribers.delete(run);
-			};
+		subscribe(fn: (v: T) => void) {
+			return $effect.root(() => {
+				$effect(() => fn(getter()));
+				return () => {};
+			});
 		}
 	};
 }
 
-// Export stores with Svelte store API compatibility
-export const headerActionButton = createSimpleStore(
-	() => _headerActionButton,
-	(v) => {
-		_headerActionButton = v;
-	},
-	headerActionButtonSubscribers
+export const translationProgress = createProxy(
+	() => appStore.translationProgress,
+	(v) => (appStore.translationProgress = v)
 );
 
-export const headerActionButton2 = createSimpleStore(
-	() => _headerActionButton2,
-	(v) => {
-		_headerActionButton2 = v;
-	},
-	headerActionButton2Subscribers
+export const tabSetState = createProxy(
+	() => appStore.tabSetState,
+	(v) => (appStore.tabSetState = v)
 );
 
-export const pkgBgColor = createSimpleStore(
-	() => _pkgBgColor,
-	(v) => {
-		_pkgBgColor = v;
-	},
-	pkgBgColorSubscribers
+export const drawerExpandedState = createProxy(
+	() => appStore.drawerExpandedState,
+	(v) => (appStore.drawerExpandedState = v)
 );
 
-export const file = createSimpleStore(
-	() => _file,
-	(v) => {
-		_file = v;
-	},
-	fileSubscribers
+export const listboxValueState = createProxy(
+	() => appStore.listboxValueState,
+	(v) => (appStore.listboxValueState = v)
 );
 
-export const saveEditedImage = createSimpleStore(
-	() => _saveEditedImage,
-	(v) => {
-		_saveEditedImage = v;
-	},
-	saveEditedImageSubscribers
-);
-
-export const saveFunction = createSimpleStore(
-	() => _saveFunction,
-	(v) => {
-		_saveFunction = v;
-	},
-	saveFunctionSubscribers
-);
-
-export const validationErrors = createSimpleStore(
-	() => _validationErrors,
-	(v) => {
-		_validationErrors = v;
-	},
-	validationErrorsSubscribers
-);
-
-// These are already using createRuneBackedStore which is fine
-export const saveLayerStore = createRuneBackedStore<() => Promise<void>>(async () => {});
-export const shouldShowNextButton = createRuneBackedStore(false);
-
-// For components still using the old store-like API for runes
-export const tabSet = {
+export const avatarSrc = {
 	get value() {
-		return _tabSetState;
+		return appStore.avatarSrc;
 	},
-	set(newValue: number) {
-		_tabSetState = newValue;
+	set value(v: string) {
+		appStore.setAvatarSrc(v);
 	},
-	update(fn: (value: number) => number) {
-		_tabSetState = fn(_tabSetState);
+	set(v: string) {
+		appStore.setAvatarSrc(v);
 	},
-	subscribe(fn: (value: number) => void) {
+	update(fn: (v: string) => string) {
+		appStore.setAvatarSrc(fn(appStore.avatarSrc));
+	},
+	subscribe(fn: (v: string) => void) {
 		return $effect.root(() => {
-			$effect(() => fn(_tabSetState));
+			$effect(() => fn(appStore.avatarSrc));
 			return () => {};
 		});
 	}
 };
 
-export const drawerExpanded = {
-	get value() {
-		return _drawerExpandedState;
-	},
-	set(newValue: boolean) {
-		_drawerExpandedState = newValue;
-	},
-	update(fn: (value: boolean) => boolean) {
-		_drawerExpandedState = fn(_drawerExpandedState);
-	},
-	subscribe(fn: (value: boolean) => void) {
-		return $effect.root(() => {
-			$effect(() => fn(_drawerExpandedState));
-			return () => {};
-		});
-	}
-};
+export const translationStatusStore = createProxy(
+	() => appStore.translationStatus,
+	(v) => (appStore.translationStatus = v as {})
+);
 
-export const storeListboxValue = {
-	get value() {
-		return _listboxValueState;
-	},
-	set(newValue: string) {
-		_listboxValueState = newValue;
-	},
-	update(fn: (value: string) => string) {
-		_listboxValueState = fn(_listboxValueState);
-	},
-	subscribe(fn: (value: string) => void) {
-		return $effect.root(() => {
-			$effect(() => fn(_listboxValueState));
-			return () => {};
-		});
-	}
-};
+export const completionStatusStore = createProxy(
+	() => appStore.completionStatus,
+	(v) => (appStore.completionStatus = v)
+);
+
+export const translationStatusOpenStore = createProxy(
+	() => appStore.translationStatusOpen,
+	(v) => (appStore.translationStatusOpen = v)
+);
+
+export const systemLanguage = createProxy(
+	() => appStore.systemLanguage,
+	(v) => (appStore.systemLanguage = v)
+);
+
+export const contentLanguage = createProxy(
+	() => appStore.contentLanguage,
+	(v) => (appStore.contentLanguage = v)
+);
+
+export const headerActionButton = createProxy(
+	() => appStore.headerActionButton,
+	(v) => (appStore.headerActionButton = v)
+);
+
+export const headerActionButton2 = createProxy(
+	() => appStore.headerActionButton2,
+	(v) => (appStore.headerActionButton2 = v)
+);
+
+export const pkgBgColor = createProxy(
+	() => appStore.pkgBgColor,
+	(v) => (appStore.pkgBgColor = v)
+);
+
+export const file = createProxy(
+	() => appStore.file,
+	(v) => (appStore.file = v)
+);
+
+export const saveEditedImage = createProxy(
+	() => appStore.saveEditedImage,
+	(v) => (appStore.saveEditedImage = v)
+);
+
+export const saveFunction = createProxy(
+	() => appStore.saveFunction,
+	(v) => (appStore.saveFunction = v)
+);
+
+export const validationErrors = createProxy(
+	() => appStore.validationErrors,
+	(v) => (appStore.validationErrors = v)
+);
+
+// Aliases for components still using old names
+export const saveLayerStore = createProxy(
+	() => appStore.saveLayerStore,
+	(v) => (appStore.saveLayerStore = v)
+);
+
+export const shouldShowNextButton = createProxy(
+	() => appStore.shouldShowNextButton,
+	(v) => (appStore.shouldShowNextButton = v)
+);
+
+export const tabSet = tabSetState; // Alias
+export const drawerExpanded = drawerExpandedState; // Alias
+export const storeListboxValue = listboxValueState; // Alias
 
 // Export table headers constant
 export const tableHeaders = ['id', 'email', 'username', 'role', 'createdAt'] as const;
@@ -617,102 +387,52 @@ export const tableHeaders = ['id', 'email', 'username', 'role', 'createdAt'] as 
 // Export indexer
 export const indexer = undefined;
 
-// Creates a reactive validation store
+// --- Validation Store ---
 const isDev = process.env.NODE_ENV !== 'production';
-const validationLogger = isDev ? (msg: string, ...args: any[]) => console.log(msg, ...args) : () => {}; // no-op in production
+const validationLogger = isDev ? (msg: string, ...args: any[]) => console.log(msg, ...args) : () => {};
 
-function createValidationStore() {
-	let errors = $state<ValidationErrors>({});
-	const isValid = $derived(Object.values(errors).every((error) => !error));
-	const subscribers = new SvelteSet<(value: { errors: ValidationErrors; isValid: boolean }) => void>();
-
-	const notify = () => {
-		const current = { errors: { ...errors }, isValid: isValid };
-		for (const fn of subscribers) {
-			try {
-				fn(current);
-			} catch {
-				// noop: subscriber errors shouldn't break notifications
-			}
+export const validationStore = {
+	get errors() {
+		return appStore.validationErrors;
+	},
+	get isValid() {
+		return Object.values(appStore.validationErrors).every((error) => !error);
+	},
+	setError: (fieldName: string, errorMessage: string | null) => {
+		appStore.validationErrors[fieldName] = errorMessage;
+		validationLogger('[ValidationStore] setError:', fieldName, errorMessage);
+	},
+	clearError: (fieldName: string) => {
+		if (fieldName in appStore.validationErrors) {
+			delete appStore.validationErrors[fieldName];
+			validationLogger('[ValidationStore] clearError:', fieldName);
 		}
-	};
-
-	return {
-		_lastLoggedState: undefined as string | undefined,
-		get errors() {
-			return errors;
-		},
-		get isValid() {
-			// Validation tracking is silent for performance
-			return isValid;
-		},
-		setError: (fieldName: string, errorMessage: string | null) => {
-			// Silent validation error setting
-			errors[fieldName] = errorMessage;
-			// 🔍 DEBUG: Log error setting
-			validationLogger('[ValidationStore] setError:', fieldName, errorMessage, 'isValid:', isValid);
-			notify();
-		},
-		clearError: (fieldName: string) => {
-			// Silent validation error clearing
-			if (fieldName in errors) {
-				delete errors[fieldName];
-				// 🔍 DEBUG: Log error clearing
-				validationLogger('[ValidationStore] clearError:', fieldName, 'isValid:', isValid);
-				notify();
-			}
-		},
-		clearAllErrors: () => {
-			errors = {};
-			notify();
-		},
-		getError: (fieldName: string): string | null => {
-			return errors[fieldName] || null;
-		},
-		hasError: (fieldName: string): boolean => {
-			return !!errors[fieldName];
-		},
-		// Svelte store contract
-		subscribe: (run: (value: { errors: ValidationErrors; isValid: boolean }) => void) => {
-			subscribers.add(run);
-			try {
-				run({ errors: { ...errors }, isValid: isValid }); // Call the derived function
-			} catch {
-				// noop on initial call
-			}
-			return () => {
-				subscribers.delete(run);
-			};
-		}
-	};
-}
-
-export const validationStore = createValidationStore();
+	},
+	clearAllErrors: () => {
+		appStore.validationErrors = {};
+	},
+	getError: (fieldName: string): string | null => {
+		return appStore.validationErrors[fieldName] || null;
+	},
+	hasError: (fieldName: string): boolean => {
+		return !!appStore.validationErrors[fieldName];
+	},
+	subscribe: (run: (value: { errors: ValidationErrors; isValid: boolean }) => void) => {
+		return $effect.root(() => {
+			$effect(() => {
+				const errors = { ...appStore.validationErrors };
+				const isValid = Object.values(errors).every((error) => !error);
+				run({ errors, isValid });
+			});
+			return () => {};
+		});
+	}
+};
 
 // --- Data Change Tracking Store ---
-/**
- * Tracks whether form data has been modified from its initial state.
- * Used by Fields.svelte to communicate with save buttons in HeaderEdit/RightSidebar.
- *
- * Flow:
- * 1. Fields.svelte detects changes and calls setHasChanges(true)
- * 2. Save buttons check hasChanges before deciding to reload
- * 3. After save/cancel, reset() is called to clear the flag
- */
 function createDataChangeStore() {
 	let hasChanges = $state<boolean>(false);
 	let initialDataSnapshot = $state<string>('');
-	const subscribers = new SvelteSet<(value: boolean) => void>();
-
-	const notify = () => {
-		for (const fn of subscribers) {
-			try {
-				fn(hasChanges);
-			} catch {
-				// noop: subscriber errors shouldn't break notifications
-			}
-		}
-	};
 
 	return {
 		get value() {
@@ -725,42 +445,28 @@ function createDataChangeStore() {
 			return initialDataSnapshot;
 		},
 		setHasChanges: (value: boolean) => {
-			if (hasChanges !== value) {
-				hasChanges = value;
-				notify();
-			}
+			hasChanges = value;
 		},
 		setInitialSnapshot: (data: Record<string, unknown>) => {
 			initialDataSnapshot = JSON.stringify(data);
 			hasChanges = false;
-			notify();
 		},
 		compareWithCurrent: (currentData: Record<string, unknown>): boolean => {
 			if (!initialDataSnapshot) return false;
 			const currentSnapshot = JSON.stringify(currentData);
 			const changed = currentSnapshot !== initialDataSnapshot;
-			if (hasChanges !== changed) {
-				hasChanges = changed;
-				notify();
-			}
+			hasChanges = changed;
 			return changed;
 		},
 		reset: () => {
 			hasChanges = false;
 			initialDataSnapshot = '';
-			notify();
 		},
-		// Svelte store contract
 		subscribe: (run: (value: boolean) => void) => {
-			subscribers.add(run);
-			try {
-				run(hasChanges);
-			} catch {
-				// noop on initial call
-			}
-			return () => {
-				subscribers.delete(run);
-			};
+			return $effect.root(() => {
+				$effect(() => run(hasChanges));
+				return () => {};
+			});
 		}
 	};
 }

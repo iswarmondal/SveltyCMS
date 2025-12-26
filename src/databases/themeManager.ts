@@ -10,7 +10,7 @@
  * - Fallback to default theme if database is unavailable
  */
 import { error } from '@sveltejs/kit';
-import type { DatabaseId } from '../content/types';
+import type { DatabaseId, ISODateString } from '../content/types';
 import type { IDBAdapter, Theme } from './dbInterface';
 import { dateToISODateString } from '@utils/dateUtils';
 
@@ -31,8 +31,8 @@ export const DEFAULT_THEME: Theme = {
 		tailwindConfigPath: '',
 		assetsPath: ''
 	},
-	createdAt: dateToISODateString(new Date()),
-	updatedAt: dateToISODateString(new Date())
+	createdAt: dateToISODateString(new Date()) as ISODateString,
+	updatedAt: dateToISODateString(new Date()) as ISODateString
 };
 
 export class ThemeManager {

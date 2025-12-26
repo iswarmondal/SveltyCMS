@@ -1,296 +1,166 @@
 /**
  * @file src/widgets/proxy.ts
- * @description Improved widget proxy aligned with factory pattern
+ * @description Widget proxy with factory pattern, fallback handling & type safety
  *
- * Key improvements:
- * - Better type safety with WidgetFactory
- * - Proper error handling and logging
- * - Support for widget metadata
- * - Graceful fallback for missing widgets
+ * Features:
+ * - Dynamic loading of core/custom widgets
+ * - Alias registration (folder name → widget.Name)
+ * - Graceful missing widget fallback (production)
+ * - Proxy-based access with autocomplete
+ * - Registry utilities
  */
 
 import { coreModules, customModules } from '@src/widgets/scanner';
-import type { WidgetFactory, WidgetModule, WidgetType } from '@widgets/types';
+import type { WidgetFactory, WidgetType } from './types';
 import { logger } from '@utils/logger';
 
-// ============================================================================
-// Widget Processing
-// ============================================================================
-
-interface ProcessedWidget {
+interface WidgetInfo {
 	name: string;
 	factory: WidgetFactory;
 	type: WidgetType;
 	path: string;
 }
 
-/**
- * Process a widget module and extract its factory function
- */
-function processWidgetModule(path: string, module: WidgetModule, type: WidgetType): ProcessedWidget | null {
+// Process single widget module
+function processModule(path: string, mod: any, type: WidgetType): WidgetInfo | null {
 	try {
-		// Extract widget name from path (e.g., './core/input/index.ts' -> 'input')
-		const pathParts = path.split('/');
-		const name = pathParts.at(-2);
-
-		if (!name) {
-			logger.warn(`[Widget Proxy] Unable to extract widget name from path: ${path}`);
+		if (!mod?.default || typeof mod.default !== 'function') {
+			logger.warn(`[Widget Proxy] Invalid export: ${path}`);
 			return null;
 		}
 
-		// Validate module structure
-		if (!module.default) {
-			logger.warn(`[Widget Proxy] No default export in widget module: ${path}`);
-			return null;
-		}
-
-		if (typeof module.default !== 'function') {
-			logger.warn(`[Widget Proxy] Default export is not a function in: ${path}`);
-			return null;
-		}
-
-		const factory = module.default as WidgetFactory;
-
-		// Validate required factory properties
+		const factory = mod.default as WidgetFactory;
 		if (!factory.Name) {
-			logger.warn(`[Widget Proxy] Widget factory missing Name property: ${path}`);
+			logger.warn(`[Widget Proxy] Missing Name: ${path}`);
 			return null;
 		}
 
-		// Enhance factory with metadata
+		// Folder name for alias
+		const folder = path.split('/').at(-2);
+		const name = factory.Name;
+
 		factory.__widgetType = type;
 
-		logger.trace(`[Widget Proxy] Successfully loaded widget: ${name} (${type})`);
-
-		return {
-			name: factory.Name,
-			factory,
-			type,
-			path
-		};
-	} catch (error) {
-		logger.error(`[Widget Proxy] Failed to process widget module ${path}:`, error);
+		return { name, factory, type, path: folder ?? '' };
+	} catch (err) {
+		logger.error(`[Widget Proxy] Failed to process ${path}`, err);
 		return null;
 	}
 }
 
-// ============================================================================
-// Widget Registry
-// ============================================================================
-
-class WidgetRegistryImpl {
-	private widgets = new Map<string, WidgetFactory>();
-	private metadata = new Map<string, { type: WidgetType; path: string }>();
+// Registry implementation
+class Registry {
+	private map = new Map<string, WidgetFactory>();
+	private meta = new Map<string, { type: WidgetType; path: string }>();
 
 	register(name: string, factory: WidgetFactory, type: WidgetType, path: string): void {
-		this.widgets.set(name, factory);
-		this.metadata.set(name, { type, path });
-		logger.trace(`[Widget Registry] Registered widget: ${name}`);
+		this.map.set(name, factory);
+		this.meta.set(name, { type, path });
 	}
 
 	get(name: string): WidgetFactory | undefined {
-		return this.widgets.get(name);
+		return this.map.get(name);
 	}
 
 	has(name: string): boolean {
-		return this.widgets.has(name);
+		return this.map.has(name);
 	}
 
 	list(): string[] {
-		return Array.from(this.widgets.keys());
+		return Array.from(this.map.keys());
 	}
 
-	getByType(type: WidgetType): string[] {
-		return Array.from(this.metadata.entries())
-			.filter(([_, meta]) => meta.type === type)
-			.map(([name]) => name);
+	byType(type: WidgetType): string[] {
+		return Array.from(this.meta.entries())
+			.filter(([, m]) => m.type === type)
+			.map(([n]) => n);
 	}
 
-	getMetadata(name: string): { type: WidgetType; path: string } | undefined {
-		return this.metadata.get(name);
+	metadata(name: string) {
+		return this.meta.get(name);
 	}
 }
 
-const registry = new WidgetRegistryImpl();
+const registry = new Registry();
 
-// ============================================================================
-// Load Widgets
-// ============================================================================
-
-// Process core widgets
-for (const [path, module] of Object.entries(coreModules)) {
-	const processed = processWidgetModule(path, module, 'core');
-	if (processed) {
-		registry.register(processed.name, processed.factory, processed.type, processed.path);
-
-		// Register aliases (folder name if different)
-		const folderName = path.split('/').at(-2);
-		if (folderName && folderName !== processed.name) {
-			logger.trace(`[Widget Proxy] Alias: ${folderName} -> ${processed.name}`);
-			registry.register(folderName, processed.factory, processed.type, processed.path);
+// Load core widgets
+for (const [path, mod] of Object.entries(coreModules)) {
+	const info = processModule(path, mod, 'core');
+	if (info) {
+		registry.register(info.name, info.factory, info.type, info.path);
+		if (info.path && info.path !== info.name) {
+			registry.register(info.path, info.factory, info.type, info.path);
 		}
 	}
 }
 
-// Process custom widgets
-for (const [path, module] of Object.entries(customModules)) {
-	const processed = processWidgetModule(path, module, 'custom');
-	if (processed) {
-		registry.register(processed.name, processed.factory, processed.type, processed.path);
-
-		// Register aliases (folder name if different)
-		const folderName = path.split('/').at(-2);
-		if (folderName && folderName !== processed.name) {
-			logger.debug(`[Widget Proxy] Alias: ${folderName} -> ${processed.name}`);
-			registry.register(folderName, processed.factory, processed.type, processed.path);
+// Load custom widgets
+for (const [path, mod] of Object.entries(customModules)) {
+	const info = processModule(path, mod, 'custom');
+	if (info) {
+		registry.register(info.name, info.factory, info.type, info.path);
+		if (info.path && info.path !== info.name) {
+			registry.register(info.path, info.factory, info.type, info.path);
 		}
 	}
 }
 
-// Log summary
-const coreCount = registry.getByType('core').length;
-const customCount = registry.getByType('custom').length;
-logger.info(`[Widget Proxy] Loaded ${coreCount} core widgets and ${customCount} custom widgets`);
+logger.info(`[Widget Proxy] Loaded ${registry.byType('core').length} core + ${registry.byType('custom').length} custom widgets`);
 
-// ============================================================================
-// Widget Proxy
-// ============================================================================
+// Missing widget fallback (production only)
+function missingFactory(name: string): WidgetFactory {
+	const fn = ((cfg: any) => ({
+		widget: { Name: 'MissingWidget', Description: `Widget "${name}" missing` },
+		label: cfg.label ?? 'Missing',
+		db_fieldName: cfg.db_fieldName ?? 'missing',
+		required: false,
+		translated: false,
+		__isMissing: true,
+		__missingName: name
+	})) as any;
 
-/**
- * Create a fallback widget factory for missing widgets
- */
-function createMissingWidgetFactory(name: string): WidgetFactory {
-	const factory = ((config: Record<string, unknown>) => {
-		logger.warn(`[Widget Proxy] Attempted to use missing widget: ${name}`);
-		return {
-			widget: {
-				widgetId: 'missing',
-				Name: 'MissingWidget',
-				Description: `Widget "${name}" is missing or disabled`,
-				validationSchema: () => true
-			},
-			label: (config.label as string) || 'Missing Widget',
-			db_fieldName: (config.db_fieldName as string) || 'missing_field',
-			required: false,
-			translated: false,
-			__isMissing: true,
-			__missingWidgetName: name
-		};
-	}) as unknown as WidgetFactory;
+	fn.Name = 'MissingWidget';
+	fn.Icon = 'mdi:alert-circle';
+	fn.Description = `Widget "${name}" not available`;
+	fn.__widgetType = 'custom';
+	fn.toString = () => '';
 
-	factory.Name = 'MissingWidget';
-	factory.Icon = 'mdi:alert-circle';
-	factory.Description = `Widget "${name}" is not available`;
-	factory.__widgetType = 'custom';
-	factory.toString = () => '';
-
-	return factory;
+	return fn;
 }
 
-/**
- * Proxy for accessing widgets with intelligent fallback
- */
+// Proxy with fallback
 export const widgetProxy = new Proxy(registry, {
 	get(target, prop) {
-		if (typeof prop !== 'string') {
-			return undefined;
-		}
-
-		// Handle registry methods
+		if (typeof prop !== 'string') return undefined;
 		if (prop in target && typeof (target as any)[prop] === 'function') {
 			return (target as any)[prop].bind(target);
 		}
 
-		// Handle widget access
 		const factory = target.get(prop);
+		if (factory) return factory;
 
-		if (factory) {
-			return factory;
-		}
-
-		// Widget not found - provide helpful feedback
-		logger.warn(`[Widget Proxy] Widget "${prop}" not found. Available widgets: ${target.list().join(', ')}`);
-
-		// Return fallback factory in production, undefined in development
-		if (process.env.NODE_ENV === 'production') {
-			return createMissingWidgetFactory(prop);
-		}
-
-		return undefined;
+		logger.warn(`[Widget Proxy] Missing widget: ${prop}`);
+		return process.env.NODE_ENV === 'production' ? missingFactory(prop) : undefined;
 	},
-
 	has(target, prop) {
-		if (typeof prop !== 'string') {
-			return false;
-		}
-		return target.has(prop);
+		return typeof prop === 'string' && target.has(prop);
 	},
-
 	ownKeys(target) {
 		return target.list();
 	},
-
 	getOwnPropertyDescriptor(target, prop) {
-		if (typeof prop !== 'string') {
-			return undefined;
-		}
-
-		if (target.has(prop)) {
-			return {
-				enumerable: true,
-				configurable: true
-			};
-		}
-
-		return undefined;
+		if (typeof prop !== 'string' || !target.has(prop)) return undefined;
+		return { enumerable: true, configurable: true };
 	}
-});
-
-// ============================================================================
-// Type-safe exports
-// ============================================================================
-
-/**
- * Type-safe widget accessor with autocomplete
- */
-export type Widgets = {
+}) as unknown as {
 	[K: string]: WidgetFactory;
-};
+} & Registry;
 
-// Export with type information
-export const widgets = widgetProxy as unknown as Widgets;
+// Public exports
+export const widgets = widgetProxy;
+export const widgetRegistry = registry;
 
-// Export registry for advanced use cases
-export { registry as widgetRegistry };
-
-// ============================================================================
-// Utility Functions
-// ============================================================================
-
-/**
- * Check if a widget is available
- */
-export function isWidgetAvailable(name: string): boolean {
-	return registry.has(name);
-}
-
-/**
- * Get list of all available widgets
- */
-export function getAvailableWidgets(): string[] {
-	return registry.list();
-}
-
-/**
- * Get widgets by type
- */
-export function getWidgetsByType(type: WidgetType): string[] {
-	return registry.getByType(type);
-}
-
-/**
- * Get widget metadata
- */
-export function getWidgetMetadata(name: string): { type: WidgetType; path: string } | undefined {
-	return registry.getMetadata(name);
-}
+export const isWidgetAvailable = (name: string) => registry.has(name);
+export const getAvailableWidgets = () => registry.list();
+export const getWidgetsByType = (type: WidgetType) => registry.byType(type);
+export const getWidgetMetadata = (name: string) => registry.metadata(name);

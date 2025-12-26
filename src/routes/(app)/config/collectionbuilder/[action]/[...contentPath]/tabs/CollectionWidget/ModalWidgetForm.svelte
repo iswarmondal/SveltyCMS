@@ -37,7 +37,7 @@ It handles widget configuration, permissions, and specific options.
 	const modalData = $derived($modalStore[0]);
 	// Widget key is the folder name (lowercase), not the widget Name
 	const widgetKey = $derived(modalData?.value?.widget?.key || (modalData?.value?.widget?.Name?.toLowerCase() as string));
-	const availableWidgets = $derived($widgetFunctions || {});
+	const availableWidgets = $derived(widgetFunctions || {});
 	const guiSchema = $derived((availableWidgets[widgetKey]?.GuiSchema || {}) as Record<string, { widget: typeof SvelteComponent }>);
 
 	// Derive options from guiSchema
@@ -129,7 +129,7 @@ It handles widget configuration, permissions, and specific options.
 
 		<footer class="{parent.regionFooter} justify-between">
 			<!-- Delete Button -->
-			<button type="button" onclick={deleteWidget} aria-label="Delete" class="variant-filled-error btn">
+			<button type="button" onclick={deleteWidget} aria-label="Delete" class="btn variant-filled-error">
 				<iconify-icon icon="icomoon-free:bin" width="24"></iconify-icon>
 				<span class="hidden sm:block">{m.button_delete()}</span>
 			</button>

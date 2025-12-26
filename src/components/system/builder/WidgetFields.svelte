@@ -24,7 +24,7 @@
 
 <script lang="ts">
 	//Stores
-	import { uiStateManager } from '@root/src/stores/UIStore.svelte';
+	import { uiVisibility } from '@root/src/stores/UIStore.svelte';
 
 	// Components
 	import PageTitle from '@components/PageTitle.svelte';
@@ -205,15 +205,13 @@
 <!-- Edit individual selected widget  -->
 {#if currentField}
 	<div
-		class="fixed -top-16 left-0 z-20 flex h-full w-full flex-col items-center justify-center overflow-auto bg-white dark:bg-surface-900 {uiStateManager
-			.uiState.value.leftSidebar === 'full'
+		class="fixed -top-16 left-0 z-20 flex h-full w-full flex-col items-center justify-center overflow-auto bg-white dark:bg-surface-900 {uiVisibility
+			.current.leftSidebar === 'full'
 			? 'left-[220px] '
 			: 'left-0 '}"
 	>
 		<div
-			class="fixed top-0 flex items-center justify-between {uiStateManager.uiState.value.leftSidebar === 'full'
-				? 'left-[220px] w-full'
-				: 'left-0 w-screen'}"
+			class="fixed top-0 flex items-center justify-between {uiVisibility.current.leftSidebar === 'full' ? 'left-[220px] w-full' : 'left-0 w-screen'}"
 		>
 			<PageTitle name="Edit Widget" icon="material-symbols:ink-pen" iconColor="text-primary-500" />
 

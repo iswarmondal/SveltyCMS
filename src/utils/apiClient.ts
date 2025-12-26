@@ -1,284 +1,130 @@
 /**
  * @file src/utils/apiClient.ts
- * @description Modern API client for RESTful collection endpoints with enhanced performance and caching
- * @example GET /api/collections/posts?limit=10&offset=0
- *
- * Features:
- *    * Performance optimization with QueryBuilder
- *    * Caching support for efficient data fetching
- *    * Error handling and logging
- *    * Custom log formatters
- *    * Conditional source file tracking
- *    * Error tracking service integration
+ * @description REST client with caching, error handling & type safety
  */
 
-import type { ISODateString } from '@src/content/types';
+import { publicEnv } from '@src/stores/globalSettings.svelte';
 import { logger } from '@utils/logger';
-import { publicEnv } from '@stores/globalSettings.svelte';
 
-// --- Type Definitions ---
 export interface ApiResponse<T = unknown> {
 	success: boolean;
 	data?: T;
 	error?: string;
 }
 
-export interface RevisionDiff {
-	diff: Record<string, { status: 'modified' | 'added' | 'deleted'; old?: unknown; new?: unknown; value?: unknown }>;
-	revisionData: Record<string, unknown>;
-}
-
-export interface RevisionMeta {
-	_id: string;
-	revision_at: ISODateString; // ISO date string
-	revision_by: string;
-}
-
-export interface Collection {
-	_id: string;
-	name: string;
-	fields: Record<string, unknown>[];
-	// Add other collection properties as needed
-}
-
-interface GetDataResponse {
-	items: Record<string, unknown>[];
+export interface Paginated<T> {
+	items: T[];
 	total: number;
 	totalPages: number;
 	page?: number;
 	pageSize?: number;
 }
 
-// --- Core API Functions ---
-async function fetchApi<T>(endpoint: string, options: RequestInit): Promise<ApiResponse<T>> {
+export interface Collection {
+	_id: string;
+	name: string;
+	fields: Record<string, unknown>[];
+}
+
+// Cache
+const CACHE_TTL = 30_000; // 30s
+const cache = new Map<string, { data: Paginated<any>; ts: number }>();
+
+function cacheKey(query: Record<string, any>): string {
+	return JSON.stringify({
+		collectionId: query.collectionId,
+		page: query.page ?? 1,
+		pageSize: query.pageSize ?? query.limit ?? 25,
+		language: query.contentLanguage ?? publicEnv.DEFAULT_CONTENT_LANGUAGE,
+		filter: query.filter ?? '{}',
+		sort: query.sort ?? `${query.sortField ?? 'createdAt'}:${query.sortDirection ?? 'desc'}`,
+		langChange: query._langChange ?? 0
+	});
+}
+
+// Core fetch
+async function api<T>(endpoint: string, opts: RequestInit = {}): Promise<ApiResponse<T>> {
 	try {
-		const response = await fetch(endpoint, {
-			headers: { 'Content-Type': 'application/json' },
+		const res = await fetch(endpoint, {
 			credentials: 'include',
-			...options
+			headers: { 'Content-Type': 'application/json', ...opts.headers },
+			...opts
 		});
-		if (!response.ok) {
-			const errorData = await response.json().catch(() => ({ error: `HTTP error! Status: ${response.status}` }));
-			throw new Error(errorData.error || `An unknown error occurred.`);
+
+		if (!res.ok) {
+			const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+			return { success: false, error: err.error ?? 'Request failed' };
 		}
-		return await response.json();
-	} catch (error) {
-		const err = error as Error;
-		logger.error(`[API Client Error]`, err);
-		return { success: false, error: err.message };
+
+		return await res.json();
+	} catch (e) {
+		const msg = e instanceof Error ? e.message : 'Network error';
+		logger.error('API request failed', { endpoint, error: msg });
+		return { success: false, error: msg };
 	}
 }
 
-// --- Entry Action Functions ---
-export function createEntry(collectionId: string, payload: Record<string, unknown>): Promise<ApiResponse<unknown>> {
-	return fetchApi(`/api/collections/${collectionId}`, {
-		method: 'POST',
-		body: JSON.stringify(payload)
-	});
-}
+// Entry actions
+export const createEntry = (collId: string, data: object) => api(`/api/collections/${collId}`, { method: 'POST', body: JSON.stringify(data) });
 
-export function updateEntry(collectionId: string, entryId: string, payload: Record<string, unknown>): Promise<ApiResponse<unknown>> {
-	return fetchApi(`/api/collections/${collectionId}/${entryId}`, {
-		method: 'PATCH',
-		body: JSON.stringify(payload)
-	});
-}
+export const updateEntry = (collId: string, id: string, data: object) =>
+	api(`/api/collections/${collId}/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
 
-export function batchUpdateEntries(collectionId: string, payload: Record<string, unknown>): Promise<ApiResponse<unknown>> {
-	// Use the status endpoint for batch status updates
-	const { ids, status, ...otherFields } = payload;
-	if (status && ids && Array.isArray(ids)) {
-		// Use status endpoint for status changes
-		return fetchApi(`/api/collections/${collectionId}/${ids[0]}/status`, {
-			method: 'PATCH',
-			body: JSON.stringify({ status, entries: ids, ...otherFields })
-		});
-	}
-	// For other batch operations, we might need a different approach
-	// For now, throw error if not status update
-	throw new Error('Batch updates only supported for status changes');
-}
+export const updateEntryStatus = (collId: string, id: string, status: string) =>
+	api(`/api/collections/${collId}/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
 
-export function updateEntryStatus(collectionId: string, entryId: string, status: string): Promise<ApiResponse<unknown>> {
-	return fetchApi(`/api/collections/${collectionId}/${entryId}/status`, {
-		method: 'PATCH',
-		body: JSON.stringify({ status })
-	});
-}
+export const deleteEntry = (collId: string, id: string) => api(`/api/collections/${collId}/${id}`, { method: 'DELETE' });
 
-export function deleteEntry(collectionId: string, entryId: string): Promise<ApiResponse<unknown>> {
-	return fetchApi(`/api/collections/${collectionId}/${entryId}`, {
-		method: 'DELETE'
-	});
-}
+export const batchDeleteEntries = (collId: string, ids: string[]) =>
+	api(`/api/collections/${collId}/batch`, { method: 'POST', body: JSON.stringify({ action: 'delete', entryIds: ids }) });
 
-export function batchDeleteEntries(collectionId: string, entryIds: string[]): Promise<ApiResponse<unknown>> {
-	return fetchApi(`/api/collections/${collectionId}/batch`, {
-		method: 'POST',
-		body: JSON.stringify({ action: 'delete', entryIds })
-	});
-}
+export const batchUpdateEntries = (collId: string, payload: { ids: string[]; status?: string; [key: string]: unknown }) =>
+	api(`/api/collections/${collId}/batch`, { method: 'POST', body: JSON.stringify({ action: 'update', ...payload }) });
 
-export function createClones(collectionId: string, entries: Record<string, unknown>[]): Promise<ApiResponse<unknown>> {
-	return fetchApi(`/api/collections/${collectionId}/batch-clone`, {
-		method: 'POST',
-		body: JSON.stringify({ entries })
-	});
-}
+export const createClones = (collId: string, entries: object[]) =>
+	api(`/api/collections/${collId}/batch-clone`, { method: 'POST', body: JSON.stringify({ entries }) });
 
-// Batch operations for entries
-export function batchCloneEntries(collectionId: string, entryIds: string[]): Promise<ApiResponse<unknown>> {
-	return fetchApi(`/api/collections/${collectionId}/batch`, {
-		method: 'POST',
-		body: JSON.stringify({ action: 'clone', entryIds })
-	});
-}
-
-export function batchUpdateEntriesStatus(collectionId: string, entryIds: string[], status: string): Promise<ApiResponse<unknown>> {
-	return fetchApi(`/api/collections/${collectionId}/batch`, {
-		method: 'POST',
-		body: JSON.stringify({ action: 'status', entryIds, status })
-	});
-}
-
-// --- Revision Functions ---
-
-// A wrapper for a POST request to compare a revision with current data
-export async function getRevisionDiff(params: {
-	collectionId: string;
-	entryId: string;
-	revisionId: string;
-	currentData: Record<string, unknown>;
-}): Promise<ApiResponse<RevisionDiff>> {
-	const { collectionId, entryId, revisionId, currentData } = params;
-	const endpoint = `/api/collections/${collectionId}/${entryId}/revisions/diff`;
-
-	return fetchApi(endpoint, {
-		method: 'POST',
-		body: JSON.stringify({ revisionId, currentData })
-	});
-}
-
-// Specialized function for revisions
-export async function getRevisions(
-	collectionId: string,
-	entryId: string,
-	options: {
-		page?: number;
-		limit?: number;
-		revisionId?: string;
-		compareWith?: string;
-		metaOnly?: boolean;
-	} = {}
-): Promise<ApiResponse<RevisionMeta[]>> {
-	const endpoint = `/api/collections/${collectionId}/${entryId}/revisions`;
-	const searchParams = new URLSearchParams(options as Record<string, string>).toString();
-	const url = `${endpoint}?${searchParams}`;
-
-	return fetchApi(url, { method: 'GET' });
-}
-
-// --- Data & Cache Functions ---
-const CACHE_TTL_MS = 30 * 1000; // 30 seconds cache TTL
-
-interface CacheEntry {
-	data: GetDataResponse;
-	timestamp: number;
-	ttl: number;
-}
-const dataCache = new Map<string, CacheEntry>();
-
-function generateCacheKey(query: Record<string, unknown>): string {
-	const normalizedQuery = {
-		collectionId: (query.collectionId as string)?.trim().toLowerCase(),
-		page: query.page || 1,
-		pageSize: query.pageSize || query.limit || 25,
-		contentLanguage: query.contentLanguage || publicEnv.DEFAULT_CONTENT_LANGUAGE,
-		filter: query.filter || '{}',
-		sortField: query.sortField || 'createdAt',
-		sortDirection: query.sortDirection || 'desc',
-		_langChange: query._langChange || 0
-	};
-	return JSON.stringify(normalizedQuery);
-}
-
-function isCacheValid(cacheEntry: CacheEntry): boolean {
-	return Date.now() - cacheEntry.timestamp < cacheEntry.ttl;
-}
-
-export function invalidateCollectionCache(collectionId: string): void {
-	const normalizedCollectionId = collectionId.trim().toLowerCase();
-	for (const [key] of dataCache.entries()) {
-		if (key.includes(`"collectionId":"${normalizedCollectionId}"`)) {
-			dataCache.delete(key);
-		}
-	}
-	logger.info(`[Cache] Invalidated for collection ${collectionId}`);
-}
-
-// Enhanced getData function using new RESTful endpoints
+// Paginated data
 export async function getData(query: {
 	collectionId: string;
 	page?: number;
 	pageSize?: number;
-	limit?: number; // Backward compatibility
+	limit?: number;
 	contentLanguage?: string;
 	filter?: string;
 	sortField?: string;
 	sortDirection?: 'asc' | 'desc';
-	sort?: string; // Backward compatibility
 	_langChange?: number;
-}): Promise<ApiResponse<GetDataResponse>> {
-	const cacheKey = generateCacheKey(query);
-	const cached = dataCache.get(cacheKey);
-
-	if (cached && isCacheValid(cached)) {
-		logger.info(`[Cache] HIT for ${cacheKey}`);
+}): Promise<ApiResponse<Paginated<object>>> {
+	const key = cacheKey(query);
+	const cached = cache.get(key);
+	if (cached && Date.now() - cached.ts < CACHE_TTL) {
+		logger.debug('Cache hit', { key });
 		return { success: true, data: cached.data };
 	}
-	logger.info(`[Cache] MISS for ${cacheKey}`);
 
-	const { collectionId, ...params } = query;
-	const searchParams = new URLSearchParams(params as Record<string, string>).toString();
-	const endpoint = `/api/collections/${collectionId}?${searchParams}`;
+	const params = new URLSearchParams(query as any);
+	const res = await api<Paginated<object>>(`/api/collections/${query.collectionId}?${params}`);
 
-	const result = await fetchApi<GetDataResponse>(endpoint, { method: 'GET' });
-
-	// Add debugging for production issues
-	if (result.success && result.data) {
-		// Validate the response format
-		if (!result.data.items || !Array.isArray(result.data.items)) {
-			logger.error(`[getData] Invalid response format:`, {
-				endpoint,
-				hasItems: !!result.data.items,
-				itemsType: typeof result.data.items,
-				responseKeys: Object.keys(result.data)
-			});
-			return { success: false, error: 'Invalid response format from server' };
-		}
-
-		dataCache.set(cacheKey, { data: result.data, timestamp: Date.now(), ttl: CACHE_TTL_MS });
-		logger.info(`[getData] Success:`, {
-			endpoint,
-			itemCount: result.data.items.length,
-			total: result.data.total,
-			cached: true
-		});
-	} else if (!result.success) {
-		logger.error(`[getData] API Error:`, { endpoint, error: result.error });
+	if (res.success && res.data) {
+		cache.set(key, { data: res.data, ts: Date.now() });
+		logger.debug('Cache set', { key, count: res.data.items.length });
 	}
 
-	return result;
+	return res;
 }
 
-// Get all collections list
-export async function getCollections(
-	options: {
-		includeFields?: boolean;
-		includeStats?: boolean;
-	} = {}
-): Promise<ApiResponse<Collection[]>> {
-	const params = new URLSearchParams(options as Record<string, string>);
-	const endpoint = `/api/collections?${params.toString()}`;
-	return fetchApi(endpoint, { method: 'GET' });
+// Collections list
+export const getCollections = (opts: { includeFields?: boolean; includeStats?: boolean } = {}) => {
+	const params = new URLSearchParams(opts as any);
+	return api<Collection[]>(`/api/collections?${params}`);
+};
+
+// Cache invalidation
+export function invalidateCollectionCache(collId: string): void {
+	const id = collId.toLowerCase();
+	for (const key of cache.keys()) {
+		if (key.includes(`"collectionId":"${id}"`)) cache.delete(key);
+	}
+	logger.info('Collection cache invalidated', { collectionId: collId });
 }

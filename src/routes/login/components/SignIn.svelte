@@ -46,7 +46,7 @@ Note: First-user registration is now handled by /setup route (enforced by handle
 	import OauthLogin from './OauthLogin.svelte';
 
 	// Screen size store
-	import { isDesktop } from '@stores/screenSizeStore.svelte';
+	import { screenSizeStore } from '@stores/screenSizeStore.svelte';
 	import { globalLoadingStore, loadingOperations } from '@stores/loadingStore.svelte';
 
 	// Props
@@ -408,7 +408,7 @@ Note: First-user registration is now handled by /setup route (enforced by handle
 	// Lazy-load FloatingPaths only when needed (desktop + active 0)
 	$effect(() => {
 		// track dependencies
-		const desktop = isDesktop.value;
+		const desktop = screenSizeStore.isDesktop;
 		const isActiveLogin = active === 0;
 		if (browser && desktop && isActiveLogin) {
 			import('@root/src/components/system/FloatingPaths.svelte').then((m) => {
@@ -441,7 +441,7 @@ Note: First-user registration is now handled by /setup route (enforced by handle
 	{#if active === 0}
 		<!-- Background pattern  -->
 		<div class="relative flex min-h-screen w-full items-center justify-center overflow-hidden">
-			{#if isDesktop.value && FloatingPathsComponent}
+			{#if screenSizeStore.isDesktop && FloatingPathsComponent}
 				<div class="absolute inset-0 z-0">
 					<FloatingPathsComponent position={-1} background="white" />
 					<FloatingPathsComponent position={1} background="white" />
@@ -452,7 +452,7 @@ Note: First-user registration is now handled by /setup route (enforced by handle
 				<SveltyCMSLogoFull />
 			</div>
 			<!-- CSS Logo -->
-			<div class="z-0 mx-auto mb-[5%] mt-[15%] w-full overflow-y-auto rounded-md bg-white p-4 lg:w-4/5" class:hide={active !== 0}>
+			<div class="z-0 mx-auto mb-[5%] mt-[15%] w-full max-w-lg overflow-y-auto rounded-md bg-white p-4 lg:w-4/5" class:hide={active !== 0}>
 				<div class="mb-1 flex flex-row gap-2">
 					<SveltyCMSLogo className="w-14" fill="red" />
 

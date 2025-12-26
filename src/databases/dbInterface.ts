@@ -26,6 +26,8 @@ import type { BaseEntity, ContentNode as ContentNodeType, DatabaseId, ISODateStr
 import type { User, Session, Token, Role } from './auth/types';
 import type { WebsiteToken } from './schemas';
 
+export type WidgetStatus = 'installed' | 'active' | 'inactive';
+
 export type { BaseEntity, ContentNodeType, DatabaseId, ISODateString, Schema, User, Session, Token, Role, WebsiteToken };
 
 export type ContentNode = ContentNodeType;
